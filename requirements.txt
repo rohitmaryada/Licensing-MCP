@@ -1,0 +1,12 @@
+# Core MCP server (Week 2+)
+mcp>=1.0.0
+
+# Database ORM
+sqlalchemy>=2.0.0
+
+# Data generation
+faker>=25.0.0
+pandas>=2.0.0
+
+# Kaggle dataset download
+kaggle>=1.6.0

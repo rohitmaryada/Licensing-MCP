@@ -1,9 +1,6 @@
 # Virtual environment
 .venv/
 
-# Generated database — regenerate with: python scripts/seed.py
-data/licensing.db
-
 # Raw downloaded datasets — regenerate with: kaggle datasets download ...
 data/raw/
 

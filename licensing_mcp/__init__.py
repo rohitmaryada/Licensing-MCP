@@ -1,0 +1,1 @@
+# Licensing Intelligence MCP Server

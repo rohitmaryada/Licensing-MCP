@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "licensing-mcp"
+version = "0.1.0"
+description = "MCP server exposing MathWorks licensing and entitlement data to AI agents"
+requires-python = ">=3.13"
+dependencies = [
+    "mcp[cli]>=1.27.0",
+    "sqlalchemy>=2.0.0",
+    "faker>=25.0.0",
+    "pandas>=2.0.0",
+    "kaggle>=1.6.0",
+]
+
+[project.scripts]
+# Allows running the server as: licensing-mcp
+licensing-mcp = "licensing_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["licensing_mcp*"]

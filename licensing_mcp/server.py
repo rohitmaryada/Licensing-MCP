@@ -16,10 +16,10 @@ from licensing_mcp.tools import get_license_products        # noqa: F401
 from licensing_mcp.tools import get_license_administrators  # noqa: F401
 from licensing_mcp.tools import search_entitlements         # noqa: F401
 
-# Top 3 (colleague — uncomment as each tool is merged)
-# from licensing_mcp.tools import get_license_status          # noqa: F401
-# from licensing_mcp.tools import check_user_entitlements     # noqa: F401
-# from licensing_mcp.tools import list_licenses_by_entity     # noqa: F401
+# Top 3 (colleague)
+from licensing_mcp.tools import get_license_status          # noqa: F401
+from licensing_mcp.tools import check_user_entitlements     # noqa: F401
+from licensing_mcp.tools import list_licenses_by_entity     # noqa: F401
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 from licensing_mcp.server_instance import mcp

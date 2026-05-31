@@ -2,9 +2,12 @@
 License and entitlement query functions.
 
 Each function is the POC stand-in for a microservice call:
-  query_license_products()      → GET /licensing-service/v1/licenses/{id}/products
+  query_license_status()         → GET /licensing-service/v1/licenses/{id}
+  query_license_products()       → GET /licensing-service/v1/licenses/{id}/products
   query_license_administrators() → GET /licensing-service/v1/licenses/{id}/admins
-  query_search_entitlements()   → GET /entitlement-service/v1/entitlements/search
+  query_check_user_entitlements() → GET /entitlement-service/v1/users/{email}/entitlements
+  query_list_licenses_by_entity() → GET /licensing-service/v1/entities/search?name=...
+  query_search_entitlements()    → GET /entitlement-service/v1/entitlements/search
 
 In production:
   - Replace SQLAlchemy queries with authenticated httpx calls
@@ -21,8 +24,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from licensing_mcp.models import (
+    Activation,
     Entity,
     EntityType,
+    Entitlement,
     License,
     LicenseAdmin,
     LicenseProduct,
@@ -63,6 +68,243 @@ def _seat_utilization(license_id: str, seat_count: int, session: Session) -> dic
         "utilization_label": f"{active_users}/{seat_count}",
         "utilization_pct": round((active_users / seat_count * 100) if seat_count else 0),
     }
+
+
+# ── Tool: get_license_status ─────────────────────────────────────────────────
+
+def query_license_status(license_id: str, session: Session) -> dict:
+    """
+    Return the health snapshot for a license: status, seat utilization, expiry.
+
+    Intentionally excludes the product catalog — use query_license_products for that.
+    This function answers "is this license active and how full is it?" in one call.
+
+    Raises ValueError if the license_id is not found.
+
+    Production equivalent:
+        GET /licensing-service/v1/licenses/{license_id}
+        Headers: Authorization: Bearer {service_token}
+    """
+    license = (
+        session.query(License)
+        .join(Entity, License.entity_id == Entity.id)
+        .join(LicenseType, License.license_type_id == LicenseType.id)
+        .filter(License.id == license_id)
+        .first()
+    )
+
+    if not license:
+        raise ValueError(f"License '{license_id}' not found.")
+
+    util = _seat_utilization(license_id, license.seat_count, session)
+
+    return {
+        "license_id": license.id,
+        "entity_name": license.entity.name,
+        "entity_type": license.entity.entity_type.name,
+        "license_type": license.license_type.name,
+        "status": license.status,
+        "seat_count": license.seat_count,
+        "seats_used": util["seats_used"],
+        "seat_utilization": util["utilization_label"],
+        "utilization_pct": util["utilization_pct"],
+        "start_date": license.start_date.isoformat(),
+        "expiry_date": license.expiry_date.isoformat(),
+        "days_until_expiry": _days_until(license.expiry_date),
+    }
+
+
+# ── Tool: check_user_entitlements ────────────────────────────────────────────
+
+def query_check_user_entitlements(user_email: str, session: Session) -> dict:
+    """
+    Return all products a user is entitled to, grouped by license, with
+    per-product activation state (active / inactive / never_activated).
+
+    Key design decisions:
+    - Grouped by license: a user can hold seats on multiple licenses
+    - All activations returned, not just the latest: surfaces stale ones
+    - activation_state summary at the entitlement level for quick scanning;
+      full activation detail (machine_id, heartbeat, days) in activations list
+
+    Raises ValueError if the email is not found.
+
+    Production equivalent:
+        GET /entitlement-service/v1/users/{email}/entitlements
+        Headers: Authorization: Bearer {service_token}
+    """
+    user = session.query(User).filter(User.email == user_email).first()
+    if not user:
+        raise ValueError(f"User '{user_email}' not found.")
+
+    # All entitlements with their product and license info in one query
+    rows = (
+        session.query(Entitlement, Product, License, LicenseType)
+        .join(Product, Entitlement.product_id == Product.id)
+        .join(License, Entitlement.license_id == License.id)
+        .join(LicenseType, License.license_type_id == LicenseType.id)
+        .filter(Entitlement.user_id == user.id)
+        .order_by(Entitlement.license_id, Product.name)
+        .all()
+    )
+
+    if not rows:
+        return {
+            "user_email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "entity_name": user.entity.name,
+            "total_entitlements": 0,
+            "licenses": [],
+        }
+
+    # Pull all activations for this user up front — avoids N+1 per entitlement
+    activations = (
+        session.query(Activation)
+        .filter(Activation.user_id == user.id)
+        .all()
+    )
+    # Index by (product_id, license_id) → list[Activation]
+    activation_map: dict[tuple[int, str], list] = {}
+    for act in activations:
+        activation_map.setdefault((act.product_id, act.license_id), []).append(act)
+
+    # Group entitlements by license
+    license_map: dict[str, dict] = {}
+    for ent, product, license, license_type in rows:
+        if ent.license_id not in license_map:
+            license_map[ent.license_id] = {
+                "license_id": license.id,
+                "license_type": license_type.name,
+                "license_status": license.status,
+                "entitlements": [],
+            }
+
+        acts = activation_map.get((product.id, license.id), [])
+
+        if not acts:
+            activation_state = "never_activated"
+        elif any(a.status == "active" for a in acts):
+            activation_state = "active"
+        else:
+            activation_state = "inactive"
+
+        activation_details = [
+            {
+                "machine_id": a.machine_id,
+                "status": a.status,
+                "last_heartbeat": a.last_heartbeat.isoformat(),
+                "days_since_heartbeat": (datetime.utcnow() - a.last_heartbeat).days,
+            }
+            for a in sorted(acts, key=lambda a: a.last_heartbeat, reverse=True)
+        ]
+
+        license_map[ent.license_id]["entitlements"].append({
+            "product_name": product.name,
+            "product_code": product.product_code,
+            "entitlement_status": ent.status,
+            "activation_state": activation_state,
+            "activations": activation_details,
+        })
+
+    return {
+        "user_email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "entity_name": user.entity.name,
+        "total_entitlements": len(rows),
+        "licenses": list(license_map.values()),
+    }
+
+
+# ── Tool: list_licenses_by_entity ────────────────────────────────────────────
+
+_ENTITY_CAP = 20  # Max entities to return for a broad name match
+
+
+def query_list_licenses_by_entity(entity_name: str, session: Session) -> dict:
+    """
+    Return all licenses belonging to entities whose name matches the query.
+
+    Partial, case-insensitive match — "acme" finds "Acme Corp".
+    Results are grouped by entity. Capped at 20 entities; if the query matches
+    more the caller gets a truncation message and should narrow the name.
+
+    Raises ValueError if no entity matches.
+
+    Production equivalent:
+        GET /licensing-service/v1/entities/search?name={entity_name}&include=licenses
+        Headers: Authorization: Bearer {service_token}
+    """
+    entities = (
+        session.query(Entity)
+        .join(EntityType, Entity.entity_type_id == EntityType.id)
+        .filter(func.lower(Entity.name).contains(entity_name.lower()))
+        .order_by(Entity.name)
+        .all()
+    )
+
+    if not entities:
+        raise ValueError(f"No entities found matching '{entity_name}'.")
+
+    truncated = len(entities) > _ENTITY_CAP
+    entities_to_return = entities[:_ENTITY_CAP]
+
+    result_entities = []
+    for entity in entities_to_return:
+        licenses = (
+            session.query(License)
+            .join(LicenseType, License.license_type_id == LicenseType.id)
+            .filter(License.entity_id == entity.id)
+            .order_by(License.expiry_date)
+            .all()
+        )
+
+        license_list = []
+        for lic in licenses:
+            util = _seat_utilization(lic.id, lic.seat_count, session)
+            product_count = (
+                session.query(func.count(LicenseProduct.id))
+                .filter(LicenseProduct.license_id == lic.id)
+                .scalar()
+                or 0
+            )
+            license_list.append({
+                "license_id": lic.id,
+                "license_type": lic.license_type.name,
+                "status": lic.status,
+                "seat_count": lic.seat_count,
+                "seats_used": util["seats_used"],
+                "seat_utilization": util["utilization_label"],
+                "utilization_pct": util["utilization_pct"],
+                "start_date": lic.start_date.isoformat(),
+                "expiry_date": lic.expiry_date.isoformat(),
+                "days_until_expiry": _days_until(lic.expiry_date),
+                "product_count": product_count,
+            })
+
+        result_entities.append({
+            "entity_name": entity.name,
+            "entity_type": entity.entity_type.name,
+            "industry": entity.industry,
+            "country": entity.country,
+            "license_count": len(licenses),
+            "licenses": license_list,
+        })
+
+    result = {
+        "query": entity_name,
+        "entity_count": len(entities),
+        "entities_returned": len(entities_to_return),
+        "truncated": truncated,
+        "entities": result_entities,
+    }
+    if truncated:
+        result["message"] = (
+            f"Query matched {len(entities)} entities — showing first {_ENTITY_CAP}. "
+            "Use a more specific name to narrow results."
+        )
+    return result
 
 
 # ── Tool 1: get_license_products ─────────────────────────────────────────────

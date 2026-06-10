@@ -20,7 +20,7 @@ The 50-result threshold is a deliberate product decision, not an arbitrary numbe
 from typing import Annotated, Optional
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import Field
+from pydantic import BaseModel, Field, create_model
 
 from licensing_mcp.database import get_session
 from licensing_mcp.data_access.license_queries import query_search_entitlements
@@ -247,59 +247,63 @@ def _unused_filters(entity_name, product_name, license_status,
     return [k for k, v in all_filters.items() if v is None]
 
 
-def _build_elicitation_schema(unused_filters: list[str]) -> dict:
+def _build_elicitation_schema(unused_filters: list[str]) -> type[BaseModel]:
     """
-    Build a JSON Schema for the elicitation prompt.
+    Build a Pydantic model class for the elicitation prompt.
 
-    The schema describes what the server is asking for — Claude Desktop
-    renders this as a form for the user to fill in.
+    IMPORTANT SDK detail: the MCP protocol sends raw JSON Schema over the wire,
+    but the Python SDK's ctx.elicit() takes a *Pydantic model class* and calls
+    schema.model_json_schema() internally to produce that wire format. Passing
+    a raw dict here crashes with AttributeError. The SDK also validates that
+    the model contains only primitive fields (str/int/float/bool) — nested
+    models are rejected because elicitation forms must stay simple.
 
-    We only include filters the user hasn't already provided, so we're
-    not asking them to re-enter what they already gave us.
+    We build the model dynamically with pydantic.create_model, including only
+    the filters the user has NOT already provided — we never ask them to
+    re-enter what they already gave us. All fields optional (default=None)
+    so the user can fill in any subset.
     """
-    properties = {}
     descriptions = {
         "entity_name": "Company or institution name (partial match)",
         "product_name": "Product name (e.g. Simulink, MATLAB Compiler)",
         "license_status": "License status: active | expired | trial | suspended",
         "license_type": "License type: enterprise | academic | individual | concurrent | trial",
         "expiring_within_days": "Expiring within N days (e.g. 30, 60, 90)",
-        "min_seat_utilization_pct": "Minimum seat utilization % (e.g. 80 for ≥80% full)",
+        "min_seat_utilization_pct": "Minimum seat utilization % (e.g. 80 for >=80% full)",
     }
-    types = {
-        "entity_name": "string",
-        "product_name": "string",
-        "license_status": "string",
-        "license_type": "string",
-        "expiring_within_days": "integer",
-        "min_seat_utilization_pct": "integer",
-    }
-
-    for f in unused_filters:
-        properties[f] = {
-            "type": types[f],
-            "description": descriptions[f],
-        }
-
-    return {
-        "type": "object",
-        "properties": properties,
-        # No required fields — user can fill in any subset
+    types: dict[str, type] = {
+        "entity_name": str,
+        "product_name": str,
+        "license_status": str,
+        "license_type": str,
+        "expiring_within_days": int,
+        "min_seat_utilization_pct": int,
     }
 
+    fields = {
+        f: (Optional[types[f]], Field(default=None, description=descriptions[f]))
+        for f in unused_filters
+    }
+    return create_model("NarrowSearchFilters", **fields)
 
-def _merge_elicited(elicited_data: dict,
+
+def _merge_elicited(elicited_data: BaseModel,
                      entity_name, product_name, license_status,
                      license_type, expiring_within_days, min_seat_utilization_pct) -> dict:
     """
     Merge the user's elicited narrowing choices with the original filter values.
     Original values take priority — elicited values fill in the blanks.
+
+    elicited_data is a Pydantic model INSTANCE (the SDK validates the user's
+    form response against the schema we sent and hands back a typed object,
+    not a dict). model_dump() converts it for uniform .get() access.
     """
+    data = elicited_data.model_dump(exclude_none=True)
     return {
-        "entity_name": entity_name or elicited_data.get("entity_name"),
-        "product_name": product_name or elicited_data.get("product_name"),
-        "license_status": license_status or elicited_data.get("license_status"),
-        "license_type": license_type or elicited_data.get("license_type"),
-        "expiring_within_days": expiring_within_days or elicited_data.get("expiring_within_days"),
-        "min_seat_utilization_pct": min_seat_utilization_pct or elicited_data.get("min_seat_utilization_pct"),
+        "entity_name": entity_name or data.get("entity_name"),
+        "product_name": product_name or data.get("product_name"),
+        "license_status": license_status or data.get("license_status"),
+        "license_type": license_type or data.get("license_type"),
+        "expiring_within_days": expiring_within_days or data.get("expiring_within_days"),
+        "min_seat_utilization_pct": min_seat_utilization_pct or data.get("min_seat_utilization_pct"),
     }

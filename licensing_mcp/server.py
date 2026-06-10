@@ -21,6 +21,18 @@ from licensing_mcp.tools import get_license_status          # noqa: F401
 from licensing_mcp.tools import check_user_entitlements     # noqa: F401
 from licensing_mcp.tools import list_licenses_by_entity     # noqa: F401
 
+# CS write surface (Week 3) — all gated by role via cs_executor
+from licensing_mcp.tools import add_user_to_license         # noqa: F401
+from licensing_mcp.tools import revoke_activation           # noqa: F401
+from licensing_mcp.tools import reset_installation_slot     # noqa: F401
+from licensing_mcp.tools import update_seat_count           # noqa: F401
+from licensing_mcp.tools import extend_license_expiry       # noqa: F401
+from licensing_mcp.tools import transfer_license_admin      # noqa: F401
+from licensing_mcp.tools import get_audit_history           # noqa: F401
+
+# User-invocable prompts (demo entry points)
+from licensing_mcp import prompts                           # noqa: F401
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 from licensing_mcp.server_instance import mcp
 

@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, create_model
 
 from licensing_mcp.database import get_session
 from licensing_mcp.data_access.license_queries import query_search_entitlements
+from licensing_mcp.elicitation import ElicitationBase
 from licensing_mcp.server_instance import mcp
 
 RESULT_LIMIT = 50  # Elicit narrowing if result count exceeds this
@@ -306,22 +307,7 @@ def _build_elicitation_schema(unused_filters: list[str]) -> type[BaseModel]:
         f: (types[f], Field(default=None, description=descriptions[f]))
         for f in unused_filters
     }
-    return create_model("NarrowSearchFilters", __base__=_ElicitationBase, **fields)
-
-
-class _ElicitationBase(BaseModel):
-    """Base model whose JSON schema is sanitised for MCP elicitation clients."""
-
-    @classmethod
-    def model_json_schema(cls, *args, **kwargs):  # type: ignore[override]
-        schema = super().model_json_schema(*args, **kwargs)
-        # Strip "default": null — the spec requires defaults to match the
-        # field type, and null never does. Optional-ness is already conveyed
-        # by the field's absence from "required".
-        for prop in schema.get("properties", {}).values():
-            if prop.get("default", "missing") is None:
-                prop.pop("default", None)
-        return schema
+    return create_model("NarrowSearchFilters", __base__=ElicitationBase, **fields)
 
 
 def _merge_elicited(elicited_data: BaseModel,

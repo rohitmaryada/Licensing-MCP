@@ -15,6 +15,7 @@ Example production swap:
     )
 """
 
+import os
 from pathlib import Path
 from sqlalchemy.orm import Session
 from licensing_mcp.models import get_engine
@@ -22,8 +23,14 @@ from licensing_mcp.models import get_engine
 # Path(__file__) is always this file's location on disk, regardless of where
 # the process was launched from. .parent.parent walks up to the project root.
 _PROJECT_ROOT = Path(__file__).parent.parent
-_DB_PATH = _PROJECT_ROOT / "data" / "licensing.db"
-_DB_URL = f"sqlite:///{_DB_PATH}"
+
+# LICENSING_DB_PATH override lets tests point at a throwaway copy of the
+# database instead of mutating the demo dataset. This is 12-factor config:
+# the same code runs against dev/test/prod purely via environment.
+_DB_PATH = Path(os.environ.get(
+    "LICENSING_DB_PATH",
+    _PROJECT_ROOT / "data" / "licensing.db",
+))
 
 _engine = get_engine(str(_DB_PATH))
 

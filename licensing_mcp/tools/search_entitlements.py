@@ -268,6 +268,15 @@ def _build_elicitation_schema(unused_filters: list[str]) -> type[BaseModel]:
     the filters the user has NOT already provided — we never ask them to
     re-enter what they already gave us. All fields optional (default=None)
     so the user can fill in any subset.
+
+    SPEC subtlety (found via inspector testing): the MCP spec restricts
+    elicitation schemas to flat primitives — StringSchema | NumberSchema |
+    BooleanSchema | EnumSchema. NO unions. Pydantic's Optional[str] generates
+    "anyOf": [string, null] — a union — which strict clients (the inspector,
+    Claude Desktop) reject with invalid_union. So we annotate fields as plain
+    str/int with default=None: optionality is expressed by omission from the
+    "required" array, not by a nullable type. Pydantic does not validate
+    defaults unless asked, so default=None on a str field is fine at runtime.
     """
     descriptions = {
         "entity_name": "Company or institution name (partial match)",
@@ -287,7 +296,7 @@ def _build_elicitation_schema(unused_filters: list[str]) -> type[BaseModel]:
     }
 
     fields = {
-        f: (Optional[types[f]], Field(default=None, description=descriptions[f]))
+        f: (types[f], Field(default=None, description=descriptions[f]))
         for f in unused_filters
     }
     return create_model("NarrowSearchFilters", **fields)

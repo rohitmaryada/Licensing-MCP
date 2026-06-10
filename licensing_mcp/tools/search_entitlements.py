@@ -269,14 +269,21 @@ def _build_elicitation_schema(unused_filters: list[str]) -> type[BaseModel]:
     re-enter what they already gave us. All fields optional (default=None)
     so the user can fill in any subset.
 
-    SPEC subtlety (found via inspector testing): the MCP spec restricts
-    elicitation schemas to flat primitives — StringSchema | NumberSchema |
-    BooleanSchema | EnumSchema. NO unions. Pydantic's Optional[str] generates
-    "anyOf": [string, null] — a union — which strict clients (the inspector,
-    Claude Desktop) reject with invalid_union. So we annotate fields as plain
-    str/int with default=None: optionality is expressed by omission from the
-    "required" array, not by a nullable type. Pydantic does not validate
-    defaults unless asked, so default=None on a str field is fine at runtime.
+    SPEC subtleties (both found via inspector testing — the Python SDK's own
+    validation is too lenient to catch either):
+
+    1. The MCP spec restricts elicitation schemas to flat primitives —
+       StringSchema | NumberSchema | BooleanSchema | EnumSchema. NO unions.
+       Pydantic's Optional[str] generates "anyOf": [string, null] — a union —
+       which strict clients reject with invalid_union. So fields are annotated
+       as plain str/int with default=None: optionality is expressed by omission
+       from the "required" array, not by a nullable type.
+
+    2. Even then, Pydantic emits "default": null into the JSON schema — and the
+       spec says IF default is present it must match the field's type (a string
+       for StringSchema, a number for NumberSchema). null matches neither, so
+       strict clients still reject. _ElicitationBase strips null defaults from
+       the generated schema; optionality survives via the absent "required" list.
     """
     descriptions = {
         "entity_name": "Company or institution name (partial match)",
@@ -299,7 +306,22 @@ def _build_elicitation_schema(unused_filters: list[str]) -> type[BaseModel]:
         f: (types[f], Field(default=None, description=descriptions[f]))
         for f in unused_filters
     }
-    return create_model("NarrowSearchFilters", **fields)
+    return create_model("NarrowSearchFilters", __base__=_ElicitationBase, **fields)
+
+
+class _ElicitationBase(BaseModel):
+    """Base model whose JSON schema is sanitised for MCP elicitation clients."""
+
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs):  # type: ignore[override]
+        schema = super().model_json_schema(*args, **kwargs)
+        # Strip "default": null — the spec requires defaults to match the
+        # field type, and null never does. Optional-ness is already conveyed
+        # by the field's absence from "required".
+        for prop in schema.get("properties", {}).values():
+            if prop.get("default", "missing") is None:
+                prop.pop("default", None)
+        return schema
 
 
 def _merge_elicited(elicited_data: BaseModel,

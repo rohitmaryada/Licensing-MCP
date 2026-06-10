@@ -153,6 +153,14 @@ async def search_entitlements(
     # The elicitation schema defines what kind of response the server expects.
     # Here we offer specific filter options based on which filters were NOT yet used.
 
+    # Track the filters actually applied to the FINAL result set — if the user
+    # narrows via elicitation, this must reflect the merged filters, not just
+    # the originals, or Claude will mis-narrate how results were filtered.
+    applied_filters = _summarise_filters(
+        entity_name, product_name, license_status,
+        license_type, expiring_within_days, min_seat_utilization_pct,
+    )
+
     if total_count > RESULT_LIMIT:
         # Build elicitation prompt dynamically based on unused filters
         unused = _unused_filters(
@@ -194,6 +202,7 @@ async def search_entitlements(
                 results, total_count = query_search_entitlements(session, **narrowed)
             finally:
                 session.close()
+            applied_filters = {k: v for k, v in narrowed.items() if v is not None}
 
         # "decline" falls through — return original results capped at RESULT_LIMIT
         if total_count > RESULT_LIMIT:
@@ -210,10 +219,7 @@ async def search_entitlements(
         "result_count": total_count,
         "results_returned": len(results),
         "truncated": truncated,
-        "filters_applied": _summarise_filters(
-            entity_name, product_name, license_status,
-            license_type, expiring_within_days, min_seat_utilization_pct,
-        ),
+        "filters_applied": applied_filters,
         "licenses": results,
     }
 

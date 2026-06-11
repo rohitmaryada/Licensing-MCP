@@ -27,3 +27,8 @@ build/
 .vscode/
 .idea/
 *.swp
+
+# Slidev deck
+slides/node_modules/
+slides/dist/
+slides/.slidev/

@@ -1,5 +1,5 @@
 ---
-theme: default
+theme: apple-basic
 colorSchema: light
 title: 'Licensing Intelligence MCP'
 info: |
@@ -10,36 +10,18 @@ drawings:
   persist: false
 transition: slide-left
 mdc: true
+layout: intro
 ---
 
-<!-- Cover styled as a VS Code editor window -->
-<div class="vsc-window">
-  <div class="vsc-tabbar">
-    <span class="vsc-tab active">licensing-mcp.md</span>
-    <span class="vsc-tab">server.py</span>
-    <span class="vsc-tab">cs_executor.py</span>
-  </div>
-  <div class="vsc-editor">
-    <div class="text-left pl-12 pt-10">
-      <div class="text-sm mono muted"># proof of concept · June 2026</div>
-      <h1 class="!border-none !text-5xl pt-2">Licensing Intelligence <span class="accent">MCP</span></h1>
-      <div class="text-xl pt-1 muted">Agentic access to licensing &amp; entitlement data</div>
-      <div class="pt-14 text-sm muted mono">Rohit Maryada · MathWorks internal</div>
-    </div>
-  </div>
-</div>
+# Licensing Intelligence MCP
 
-<style>
-.vsc-window { border: 1px solid #e5e5e5; border-radius: 6px; overflow: hidden; height: 88%; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-.vsc-tabbar { background: #ececec; border-bottom: 1px solid #e5e5e5; display: flex; }
-.vsc-tab { padding: 7px 18px; font-size: 13px; color: #6e6e6e; border-right: 1px solid #e5e5e5;
-  font-family: -apple-system, "Segoe UI", sans-serif; }
-.vsc-tab.active { background: #ffffff; color: #333; border-top: 2px solid #007acc; }
-.vsc-editor { background: #ffffff; height: 100%; }
-.mono { font-family: "Cascadia Code", Menlo, monospace; }
-.muted { color: #6e6e6e; }
-.accent { color: #007acc; }
-</style>
+## Agentic access to licensing & entitlement data
+
+<div class="absolute bottom-10">
+  <span class="font-700">
+    Rohit Maryada · June 2026 · MathWorks internal
+  </span>
+</div>
 
 <!--
 Open with the demo promise: in 10 minutes you'll watch an AI agent diagnose

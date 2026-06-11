@@ -10,3 +10,9 @@ pandas>=2.0.0
 
 # Kaggle dataset download
 kaggle>=1.6.0
+
+# Custom agent host (agent/)
+anthropic>=0.100.0
+fastapi>=0.130.0
+uvicorn>=0.40.0
+python-dotenv>=1.0.0

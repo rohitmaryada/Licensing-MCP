@@ -5,7 +5,7 @@ A local proof-of-concept MCP (Model Context Protocol) server that exposes MathWo
 - **Read Surface** — customer-facing queries (license status, entitlements, seat counts)
 - **CS Action Surface** — role-gated write tools for Customer Service workflows, with full audit logging
 
-Built on Python + SQLAlchemy + SQLite, running over stdio for Claude Desktop.
+Built on Python 3.13 + MCP SDK + SQLAlchemy + SQLite, running over stdio for Claude Desktop.
 
 ---
 
@@ -14,59 +14,88 @@ Built on Python + SQLAlchemy + SQLite, running over stdio for Claude Desktop.
 | Week | Focus | Status |
 |---|---|---|
 | Week 1 | Data foundation — schema, models, seeded database | ✅ Complete |
-| Week 2 | MCP server + read tools (6 tools) | 🔜 Next |
-| Week 3 | CS write tools + audit layer | 🔜 Planned |
-| Week 4 | Buffer, demo prep, presentation | 🔜 Planned |
+| Week 2 | MCP server + 6 read tools, inspector-tested, live in Claude Desktop | ✅ Complete |
+| Week 3 | CS write surface — identity gate, 6 write tools, atomic audit log, MCP prompts | ✅ Complete |
+| Week 4 | Demo rehearsal (Story 1 + Story 2 verified live), presentation deck | 🔄 In progress |
+
+**13 tools + 2 prompts, all verified end-to-end.** Both demo stories have been rehearsed live through Claude Desktop. Remaining: final presentation polish and delivery.
 
 ---
 
-## What Has Been Built (Week 1)
+## What Has Been Built
 
-### Database Schema (SQLite, `data/licensing.db`)
+### MCP Server (`licensing_mcp/`)
 
-Fourteen tables across four schema groups:
+**Read tools (open access):**
+| Tool | Answers |
+|---|---|
+| `get_license_status` | Is L-99001 active? Seat utilization? Expiry? |
+| `check_user_entitlements` | What can jane.doe run? Any stale activations? |
+| `list_licenses_by_entity` | What licenses does Acme Corp hold? |
+| `get_license_products` | What products are on this license? |
+| `get_license_administrators` | Who manages this license? |
+| `search_entitlements` | Which enterprise licenses expire in 60 days? *(elicits narrowing when >50 results)* |
 
-**Licensing & Entitlement**
-- `entity_types` — enterprise, academic, individual, government
-- `entities` — 500 companies/universities/individuals (99 seeded from real AWS SaaS data, 401 synthetic)
-- `license_types` — enterprise, academic, individual, concurrent, trial
-- `licenses` — ~812 license records linked to entities
-- `products` — 20 MathWorks products (MATLAB, Simulink, toolboxes)
-- `license_products` — which products are on each license, industry-matched
-- `users` — ~3,900 end users with realistic domain emails
-- `license_users` — who is on which license (60–95% seat utilization)
-- `license_admins` — which users administer each license
-- `entitlements` — denormalized user × license × product (~22,000 rows)
-- `installations` — machine-level install records
-- `activations` — active/stale activations; some >90 days old for demo realism
+**CS write tools (role-gated, every call audited):**
+| Tool | Required Role |
+|---|---|
+| `add_user_to_license` | CS-L1 |
+| `revoke_activation` *(elicitation confirm)* | CS-L1 |
+| `reset_installation_slot` | CS-L2 |
+| `update_seat_count` | CS-L2 |
+| `extend_license_expiry` | CS-L3 |
+| `transfer_license_admin` | CS-L3 |
+| `get_audit_history` | any CS role |
 
-**CS Identity & Permissions**
-- `cs_users` — 51 CS reps (26 L1 / 15 L2 / 10 L3) + named demo rep `rep.sarah@mathworks.com`
-- `cs_roles` — CS-L1, CS-L2, CS-L3 role definitions
-- `cs_permissions` — which roles can call which write tools
-- `cs_role_members` — role assignments
+**MCP prompts (user-invocable from the "+" menu in Claude Desktop):**
+- `license_health_review` — full account health check for an entity
+- `diagnose_activation_issue` — the CS Tier-1 diagnostic workflow (Story 2 entry point)
 
-**Audit Log**
-- `cs_audit_log` — 2,000 pre-seeded audit records covering all write tool types
+### Architecture
 
-### Demo Scenario (pre-wired)
+```
+tools/           MCP interface layer — descriptions, schemas, error shaping
+  ↓
+cs_executor.py   Write pipeline: resolve identity → role gate → mutate
+                 → audit → atomic commit (unaudited writes are impossible;
+                 rejections and failures are audited too)
+  ↓
+data_access/     SQLAlchemy queries standing in for microservice REST calls.
+                 In production only this layer changes (→ authenticated HTTP).
+  ↓
+database.py      Single session factory; LICENSING_DB_PATH env override
+                 lets tests run against a throwaway DB copy.
+```
 
-A deterministic scenario is seeded specifically for the CS Action Agent demo (Story 2):
+Identity: `CS_ACTOR_ID` env var resolved per call against `cs_users`/`cs_roles` —
+the POC stand-in for a validated PingID JWT `sub` claim. Permissions live in the
+`cs_permissions` table (grants are data changes, not deploys).
 
-- **Entity:** Acme Corp
-- **License:** `L-99001` — 10-seat enterprise license for MATLAB + Simulink, active through 2026-12-31
-- **Seat utilization:** 10/10 (at capacity)
-- **Demo user:** `jane.doe@acmecorp.com` — entitled to Simulink, but has a stale activation on `MAC-OLD-7291` (last heartbeat 94 days ago, status = inactive)
-- **Demo CS rep:** `rep.sarah@mathworks.com` — CS-L1 role
+### Database (SQLite, `data/licensing.db` — committed for easy collaboration)
 
-This is the exact scenario for: *"User can't activate Simulink on her new laptop → seats at capacity → find stale activation → revoke it → audit record written."*
+Seventeen tables across four schema groups: licensing & entitlement (12),
+CS identity & permissions (4), audit log (1). Hybrid-seeded: 99 real companies
+from the AWS SaaS Sales dataset + Faker for the rest. ~500 entities, ~800 licenses,
+~3,900 users, ~22,000 entitlements, 51 CS reps, 2,000 pre-seeded audit records.
+
+### Demo Scenario (pre-wired, verified live)
+
+- **Entity:** Acme Corp · **License:** `L-99001` — 10 seats, 10/10 occupied, MATLAB + Simulink
+- **Demo user:** `jane.doe@acmecorp.com` — entitled to Simulink, stale activation on `MAC-OLD-7291` (94 days, inactive)
+- **Demo CS rep:** `rep.sarah@mathworks.com` — CS-L1
+
+Story 2 flow: check entitlements → seats at capacity → find stale activation → confirm + revoke → audit record with the agent's full reasoning chain.
+
+> After running the demo, restore pristine state with `python scripts/seed.py` (then restart Claude Desktop).
 
 ### Key Documents
 
 | File | Purpose |
 |---|---|
 | `project-proposal.md` | Full POC proposal — architecture, tool surface, demo script, success criteria |
-| `security-considerations-mcp-access.md` | Production security posture — SSO/PingID integration, OAuth 2.1 architecture, threat model, POC vs. production gap |
+| `security-considerations-mcp-access.md` | Production security posture — PingID/OAuth 2.1, service-to-service auth, threat model, POC vs. production gap, real-world MCP auth survey |
+| `presentation-and-questions-notes.md` | MCP concepts mapped to this codebase, presentation arc, Q&A prep |
+| `slides/` | Slidev presentation deck (apple-basic theme) — `cd slides && npm install && npm run dev` |
 
 ---
 
@@ -74,63 +103,71 @@ This is the exact scenario for: *"User can't activate Simulink on her new laptop
 
 ### Prerequisites
 
-- Python 3.13 (`/opt/homebrew/bin/python3.13` on macOS with Homebrew)
-- A Kaggle account with an API token at `~/.kaggle/` (for the raw dataset download)
+- Python 3.13
+- Claude Desktop (for the full experience) or the MCP Inspector (for tool testing)
 
-### 1. Clone and create virtual environment
+### 1. Clone, create venv, install
 
 ```bash
-git clone https://github.com/<your-username>/licensing-mcp.git
-cd licensing-mcp
+git clone https://github.com/rohitmaryada/Licensing-MCP.git
+cd Licensing-MCP
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .          # editable install — required for python -m licensing_mcp
 ```
 
-### 2. Download the raw dataset
+### 2. Database
 
-The seed script uses the [Amazon AWS SaaS Sales dataset](https://www.kaggle.com/datasets/nnthanh101/aws-saas-sales) from Kaggle to seed realistic company names. Your Kaggle token must be in `~/.kaggle/kaggle.json` or exported as `KAGGLE_TOKEN`.
+`data/licensing.db` is **committed** — you have a ready-to-query database on clone.
+To regenerate from scratch (optional; requires a Kaggle token for the
+[AWS SaaS Sales dataset](https://www.kaggle.com/datasets/nnthanh101/aws-saas-sales)):
 
 ```bash
-# Place your kaggle.json at ~/.kaggle/kaggle.json, then:
 kaggle datasets download -d nnthanh101/aws-saas-sales -p data/raw --unzip
-```
-
-Or with a token env var:
-```bash
-KAGGLE_TOKEN=<your-token> kaggle datasets download -d nnthanh101/aws-saas-sales -p data/raw --unzip
-```
-
-### 3. Generate the database
-
-```bash
 python scripts/seed.py
 ```
 
-This creates `data/licensing.db` (~5 MB). Expected output:
-```
-Creating database schema...
-Seeding reference data...
-Seeding entities (AWS SaaS + Faker)...  → 500 entities
-Seeding licenses...                      → 812 licenses
-Seeding users...                         → ~3,900 users
-Seeding entitlements...                  → ~22,000 entitlements
-Seeding demo scenario (Acme Corp)...
-Seeding CS users...                      → 51 CS users
-Seeding audit log (2,000 records)...
-Done. Database at: data/licensing.db
-```
-
-### 4. Verify (optional)
+### 3. Test with the MCP Inspector
 
 ```bash
-python3 - <<'EOF'
-import sqlite3
-conn = sqlite3.connect("data/licensing.db")
-for t in ["entities","licenses","users","entitlements","cs_users","cs_audit_log"]:
-    n = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-    print(f"{t:<25} {n:>6} rows")
-EOF
+npx @modelcontextprotocol/inspector .venv/bin/python -m licensing_mcp
+```
+
+Connect, list tools (you should see 13), and try `get_license_status` with `L-99001`.
+
+### 4. Install in Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "licensing-mcp": {
+      "command": "/absolute/path/to/Licensing-MCP/.venv/bin/python",
+      "args": ["-m", "licensing_mcp"],
+      "env": {
+        "CS_ACTOR_ID": "rep.sarah@mathworks.com"
+      }
+    }
+  }
+}
+```
+
+Fully quit and relaunch Claude Desktop. The server appears under the
+sliders icon ("Search and tools"); the two prompts appear in the "+" menu.
+
+> **After any code change**, restart Claude Desktop (or disconnect/reconnect in
+> the Inspector) — clients spawn the server once per connection.
+
+### 5. Run the test suite pattern
+
+Tests run against a **copy** of the database via the `LICENSING_DB_PATH` override:
+
+```bash
+cp data/licensing.db /tmp/licensing-test.db
+LICENSING_DB_PATH=/tmp/licensing-test.db CS_ACTOR_ID=rep.sarah@mathworks.com \
+  .venv/bin/python -m pytest   # or the in-memory client scripts
 ```
 
 ---
@@ -138,62 +175,52 @@ EOF
 ## Project Structure
 
 ```
-licensing-mcp/
+Licensing-MCP/
 ├── data/
-│   ├── raw/                  # Downloaded Kaggle CSV (git-ignored)
-│   └── licensing.db          # Generated SQLite database (git-ignored)
+│   ├── raw/                       # Kaggle CSV (git-ignored)
+│   └── licensing.db               # Seeded SQLite DB (committed)
 ├── licensing_mcp/
-│   ├── __init__.py
-│   └── models.py             # SQLAlchemy ORM models (all 14 tables)
+│   ├── models.py                  # SQLAlchemy ORM — all 17 tables
+│   ├── database.py                # Session factory + LICENSING_DB_PATH override
+│   ├── identity.py                # CS actor resolution + permission checks
+│   ├── cs_executor.py             # Write pipeline: gate → mutate → audit → commit
+│   ├── elicitation.py             # Spec-compliant elicitation schema base
+│   ├── prompts.py                 # MCP prompts (user-invocable)
+│   ├── server_instance.py         # Singleton FastMCP app
+│   ├── server.py                  # Tool registration + stdio entry point
+│   ├── data_access/
+│   │   ├── license_queries.py     # Read queries (→ microservice calls in prod)
+│   │   ├── write_queries.py       # Mutations with before/after state capture
+│   │   └── audit.py               # Audit writer + history reader
+│   └── tools/                     # One file per MCP tool (13 total)
 ├── scripts/
-│   └── seed.py               # Hybrid seeder: AWS SaaS + Faker
-├── project-proposal.md       # Full POC proposal
-├── security-considerations-mcp-access.md  # Production security reference
-├── requirements.txt
-└── README.md
+│   └── seed.py                    # Hybrid seeder: AWS SaaS + Faker
+├── slides/                        # Slidev presentation deck
+├── project-proposal.md
+├── security-considerations-mcp-access.md
+├── presentation-and-questions-notes.md
+├── pyproject.toml
+└── requirements.txt
 ```
-
----
-
-## MCP Tool Surface (Planned — Week 2 & 3)
-
-### Read Tools (open access)
-| Tool | Description |
-|---|---|
-| `get_license_status` | License status, expiry, seat count, type |
-| `check_user_entitlements` | Products a user is entitled to, with activation state |
-| `list_licenses_by_entity` | All licenses for a company or institution |
-| `get_license_products` | Product catalog on a license |
-| `get_license_administrators` | Admin users who manage a license |
-| `search_entitlements` | Filtered queries across the entitlement dataset |
-
-### CS Write Tools (role-gated)
-| Tool | Required Role | Description |
-|---|---|---|
-| `add_user_to_license` | CS-L1 | Add a user to a license |
-| `revoke_activation` | CS-L1 | Deactivate a product activation (frees a seat) |
-| `reset_installation_slot` | CS-L2 | Clear an installation record |
-| `update_seat_count` | CS-L2 | Increase or decrease seat count |
-| `extend_license_expiry` | CS-L3 | Extend a license's expiration date |
-| `transfer_license_admin` | CS-L3 | Reassign license administration |
-| `get_audit_history` | CS-L1+ | Retrieve audit trail for a license |
 
 ---
 
 ## Security Reference
 
-See [`security-considerations-mcp-access.md`](./security-considerations-mcp-access.md) for the full production security posture, including:
-- PingID / OAuth 2.1 integration architecture
-- How to restrict installation to authorized personnel
+See [`security-considerations-mcp-access.md`](./security-considerations-mcp-access.md) for the full production security posture:
+- PingID / OAuth 2.1 integration architecture (user identity boundary)
+- Service-to-service auth — the MCP server as a registered service consumer (RFC 7523)
 - Full threat model (authentication, authorization, prompt injection, data exposure, compliance)
 - POC vs. production gap table
+- Survey of real-world MCP server auth (Atlassian, MathWorks, MCP spec)
 
 ---
 
 ## Contributing
 
 This is an internal POC. If you're a collaborator:
-1. Complete setup steps above
-2. The database is **not** committed — run `python scripts/seed.py` after cloning
-3. The raw Kaggle CSV is also **not** committed — download it first (Step 2 above)
-4. All new code goes under `licensing_mcp/` (server) or `scripts/` (data tooling)
+1. Complete setup steps above — the DB comes with the clone
+2. New tools: one file under `licensing_mcp/tools/`, query logic in `data_access/`, then add the import line in `server.py`
+3. Write tools must go through `cs_executor.execute_cs_write()` — never mutate directly
+4. Elicitation schemas must inherit from `licensing_mcp.elicitation.ElicitationBase` (MCP spec restricts these to flat primitives)
+5. Test against a DB copy: `LICENSING_DB_PATH=/tmp/test.db`

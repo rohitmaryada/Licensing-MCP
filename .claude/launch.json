@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "slidev-deck",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["slidev", "slides.md", "--port", "3031"],
+      "cwd": "slides",
+      "port": 3031
+    }
+  ]
+}

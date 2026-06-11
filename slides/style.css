@@ -1,0 +1,106 @@
+/*
+ * VS Code Light look & feel.
+ * Palette taken from VS Code's Light+ defaults:
+ *   editor bg      #ffffff
+ *   sidebar bg     #f3f3f3
+ *   border         #e5e5e5
+ *   status bar     #007acc
+ *   text           #333333
+ *   keyword blue   #0000ff   (used sparingly for accents)
+ *   function tan   #795e26
+ *   string red     #a31515
+ */
+
+:root {
+  --vsc-bg: #ffffff;
+  --vsc-panel: #f3f3f3;
+  --vsc-border: #e5e5e5;
+  --vsc-blue: #007acc;
+  --vsc-text: #333333;
+  --vsc-muted: #6e6e6e;
+  --vsc-selection: #add6ff;
+}
+
+.slidev-layout {
+  background: var(--vsc-bg);
+  color: var(--vsc-text);
+  /* VS Code uses the OS system font; this is its exact stack */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu", "Droid Sans", sans-serif;
+}
+
+.slidev-layout h1,
+.slidev-layout h2,
+.slidev-layout h3 {
+  color: var(--vsc-text);
+  font-weight: 600;
+}
+
+.slidev-layout h1 {
+  border-bottom: 1px solid var(--vsc-border);
+  padding-bottom: 0.3em;
+}
+
+.slidev-layout a {
+  color: var(--vsc-blue);
+}
+
+.slidev-layout b,
+.slidev-layout strong {
+  color: #000000;
+}
+
+/* Code: VS Code's editor mono stack */
+.slidev-layout code,
+.slidev-layout kbd,
+.slidev-layout pre {
+  font-family: "Cascadia Code", "SF Mono", Menlo, Monaco, "Courier New", monospace;
+}
+
+.slidev-layout pre {
+  background: var(--vsc-bg) !important;
+  border: 1px solid var(--vsc-border);
+  border-radius: 4px;
+}
+
+.slidev-layout code:not(pre code) {
+  background: var(--vsc-panel);
+  color: #a31515;
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+
+/* Tables — like VS Code settings grids */
+.slidev-layout table {
+  border-collapse: collapse;
+}
+.slidev-layout th {
+  background: var(--vsc-panel);
+  color: var(--vsc-text);
+  border: 1px solid var(--vsc-border);
+  font-weight: 600;
+}
+.slidev-layout td {
+  border: 1px solid var(--vsc-border);
+}
+.slidev-layout tr:nth-child(even) td {
+  background: #f8f8f8;
+}
+
+/* Section divider slides — sidebar gray with the activity-bar blue edge */
+.slidev-layout.slidev-layout-section,
+.slidev-layout[layout="section"] {
+  background: var(--vsc-panel);
+  border-left: 6px solid var(--vsc-blue);
+}
+
+/* Blockquotes as VS Code "info" notification */
+.slidev-layout blockquote {
+  background: #f0f7fc;
+  border-left: 4px solid var(--vsc-blue);
+  color: var(--vsc-text);
+}
+
+/* Leave room for the status bar */
+.slidev-layout {
+  padding-bottom: 2.2rem;
+}

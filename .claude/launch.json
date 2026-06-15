@@ -7,6 +7,12 @@
       "runtimeArgs": ["slidev", "slides.md", "--port", "3031"],
       "cwd": "slides",
       "port": 3031
+    },
+    {
+      "name": "agent",
+      "runtimeExecutable": ".venv/bin/uvicorn",
+      "runtimeArgs": ["agent.app:app", "--port", "8100"],
+      "port": 8100
     }
   ]
 }

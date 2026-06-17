@@ -1,0 +1,25 @@
+# Keycloak for the Licensing MCP agent — one-command auth setup.
+#
+#   cd keycloak && docker compose up -d
+#
+# On first boot Keycloak imports realm-export.json (the `licensing-mcp` realm,
+# the `licensing-agent` client, and three CS-rep users that match the seeded
+# database). Admin console: http://localhost:8080  (admin / admin).
+#
+# These values match what agent/auth.py hardcodes:
+#   KEYCLOAK_URL = http://localhost:8080
+#   REALM        = licensing-mcp
+#   CLIENT_ID    = licensing-agent
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: licensing-keycloak
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "127.0.0.1:8080:8080"      # localhost only — not exposed on the network
+    volumes:
+      - ./realm-export.json:/opt/keycloak/data/import/realm-export.json:ro

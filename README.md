@@ -97,6 +97,7 @@ Story 2 flow: check entitlements → seats at capacity → find stale activation
 | `presentation-and-questions-notes.md` | MCP concepts mapped to this codebase, presentation arc, Q&A prep |
 | `slides/` | Slidev presentation deck (apple-basic theme) — `cd slides && npm install && npm run dev` |
 | `agent/README.md` | Custom agent host — run instructions, architecture, and the Keycloak auth hand-off |
+| `keycloak/` | One-command Keycloak auth (`docker compose up`) — pre-imported realm, client, and DB-matched CS users |
 
 ---
 

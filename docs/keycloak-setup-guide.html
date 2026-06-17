@@ -194,6 +194,13 @@
             <strong>The existing MCP server handles authorization</strong> — <code>identity.py</code> resolves the email against <code>cs_users</code>, <code>cs_permissions</code> table maps roles to tools, <code>cs_executor.py</code> gates every write and logs audit. None of that changes.</p>
         </div>
 
+        <div class="success">
+            <p><strong>Prefer the one-command setup.</strong> The <code>keycloak/</code> folder has a
+            <code>docker-compose.yml</code> + pre-built realm export that creates the realm, client, and the
+            three correct users automatically — <code>cd keycloak &amp;&amp; docker compose up -d</code>. See
+            <code>keycloak/README.md</code>. The manual steps below are the explainer for what that import does.</p>
+        </div>
+
         <nav class="toc">
             <h2>Contents</h2>
             <ol>
@@ -271,18 +278,24 @@
             </ol>
 
             <h3>2.3 Create Test Users</h3>
-            <p>These must match the <code>cs_users</code> table in the SQLite database (already seeded).</p>
-            <p>Go to <strong>Users</strong> &rarr; <strong>Add user</strong> for each:</p>
+            <p>The email <strong>must exactly match a row in the <code>cs_users</code> table</strong> in the
+            seeded database, or the MCP server's <code>identity.py</code> rejects the login.
+            Use these three verified users — one per CS tier, so you can see role-gating in action:</p>
             <table>
-                <tr><th>Username</th><th>Email</th><th>Password</th></tr>
-                <tr><td><code>rep.sarah</code></td><td><code>rep.sarah@mathworks.com</code></td><td><code>password123</code></td></tr>
-                <tr><td><code>rep.mike</code></td><td><code>rep.mike@mathworks.com</code></td><td><code>password123</code></td></tr>
-                <tr><td><code>rep.director</code></td><td><code>rep.director@mathworks.com</code></td><td><code>password123</code></td></tr>
+                <tr><th>Username (= email)</th><th>Password</th><th>DB role</th></tr>
+                <tr><td><code>rep.sarah@mathworks.com</code></td><td><code>password123</code></td><td>CS-L1</td></tr>
+                <tr><td><code>amy.martin@mathworks.com</code></td><td><code>password123</code></td><td>CS-L2</td></tr>
+                <tr><td><code>amy.james@mathworks.com</code></td><td><code>password123</code></td><td>CS-L3</td></tr>
             </table>
 
-            <p><strong>For each user:</strong></p>
+            <div class="warning"><p><strong>Set the Username to the full email</strong> (e.g.
+            <code>rep.sarah@mathworks.com</code>), not a short handle like <code>rep.sarah</code>.
+            You log in with this username, and it must equal the email so the JWT's email claim
+            matches <code>cs_users.email</code>. A short username produces "Invalid username or password" at login.</p></div>
+
+            <p>Go to <strong>Users</strong> &rarr; <strong>Add user</strong> for each. <strong>For each user:</strong></p>
             <ol>
-                <li>Fill in Username, Email, First name, Last name</li>
+                <li>Username <strong>and</strong> Email: the full email from the table above</li>
                 <li>Email verified: <strong>ON</strong></li>
                 <li>Click <strong>Create</strong></li>
                 <li>Go to <strong>Credentials</strong> tab &rarr; <strong>Set password</strong> &rarr; <code>password123</code> &rarr; Temporary: <strong>OFF</strong> &rarr; Save</li>
@@ -598,7 +611,7 @@ KEYCLOAK_CLIENT_ID=licensing-agent</code></pre>
             <div class="step"><span class="step-num">7</span><div class="step-content"><strong>Chat:</strong> "jane.doe@acmecorp.com can't activate Simulink" → agent diagnoses and resolves</div></div>
             <div class="step"><span class="step-num">8</span><div class="step-content"><strong>Verify audit:</strong> Ask "show the audit history for L-99001" — actor should be <code>rep.sarah@mathworks.com</code></div></div>
             <div class="step"><span class="step-num">9</span><div class="step-content"><strong>Sign out:</strong> Click Sign out in header → login overlay reappears at <code>http://localhost:8100</code></div></div>
-            <div class="step"><span class="step-num">10</span><div class="step-content"><strong>Switch user:</strong> Click Sign in → log in as <code>rep.director@mathworks.com</code> → confirm different email in header</div></div>
+            <div class="step"><span class="step-num">10</span><div class="step-content"><strong>Switch user:</strong> Click Sign in → log in as <code>amy.james@mathworks.com</code> (CS-L3) → confirm different email in header</div></div>
 
             <h3>Test Role Gating (existing code — nothing to do with Keycloak)</h3>
             <ol>

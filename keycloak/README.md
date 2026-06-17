@@ -18,14 +18,16 @@ Keycloak and imports a ready-made realm on first start.
 Three test users — **each matches a real `cs_users` row in the seeded database**,
 one per CS tier so you can see role-gating change behavior:
 
-| Login (username & email) | Password | DB role |
+| Username (type this at login) | Password | DB role |
 |---|---|---|
 | `rep.sarah@mathworks.com` | `password123` | CS-L1 |
 | `amy.martin@mathworks.com` | `password123` | CS-L2 |
 | `amy.james@mathworks.com` | `password123` | CS-L3 |
 
-> The email in the JWT must exactly match `cs_users.email`, or the MCP server's
-> `identity.py` rejects the login. These three are verified to exist.
+> ⚠️ **Log in with the FULL email as the username** — e.g. `rep.sarah@mathworks.com`,
+> not `rep.sarah`. The imported users' username *is* their email (this guarantees
+> the email claim matches `cs_users.email`, which the MCP server's `identity.py`
+> requires). Typing the short name gives "Invalid username or password".
 
 ## Prerequisites
 
@@ -44,7 +46,8 @@ Then in a second terminal, from the repo root, start the agent:
 .venv/bin/uvicorn agent.app:app --port 8100
 ```
 
-Open **http://localhost:8100** → Sign in → log in as any user above.
+Open **http://localhost:8100** → Sign in → at the Keycloak prompt enter the
+**full email** as the username (e.g. `rep.sarah@mathworks.com`) and `password123`.
 
 Stop Keycloak when you're done:
 

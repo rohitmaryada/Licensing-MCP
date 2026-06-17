@@ -27,7 +27,7 @@ import anthropic
 
 from agent.mcp_bridge import MCPBridge
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 16000
 MAX_LOOPS = 15  # circuit breaker — an agent should never need this many
 

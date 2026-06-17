@@ -33,7 +33,8 @@ class MCPBridge:
     once per app session, not once per request.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, actor_email: str) -> None:
+        self._actor_email = actor_email
         self._stack: AsyncExitStack | None = None
         self.session: ClientSession | None = None
         self.claude_tools: list[dict] = []
@@ -47,10 +48,7 @@ class MCPBridge:
         params = StdioServerParameters(
             command=str(_PROJECT_ROOT / ".venv" / "bin" / "python"),
             args=["-m", "licensing_mcp"],
-            env={
-                **os.environ,
-                "CS_ACTOR_ID": os.environ.get("CS_ACTOR_ID", "rep.sarah@mathworks.com"),
-            },
+            env={**os.environ, "CS_ACTOR_ID": self._actor_email},
         )
 
         read, write = await self._stack.enter_async_context(stdio_client(params))

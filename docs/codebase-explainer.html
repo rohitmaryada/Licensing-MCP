@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Licensing Intelligence MCP — Codebase Explainer</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --surface-hover: #f1f5f9;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #475569;
+            --accent: #0369a1;
+            --accent-dim: #0284c7;
+            --green: #15803d;
+            --yellow: #a16207;
+            --red: #dc2626;
+            --purple: #7c3aed;
+            --orange: #c2410c;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        header {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 2rem 2rem 1rem;
+            text-align: center;
+        }
+        header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+        }
+        header p {
+            color: var(--text-muted);
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        .tab-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        .tab-nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 1.5rem;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 0.75rem 1.25rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+            border-radius: 6px 6px 0 0;
+        }
+        .tab-btn:hover { background: var(--surface-hover); color: var(--text); }
+        .tab-btn.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+            background: var(--surface-hover);
+        }
+        .tab-panel { display: none; animation: fadeIn 0.3s ease; }
+        .tab-panel.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1.25rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .card h3 {
+            color: var(--accent);
+            margin-bottom: 0.75rem;
+            font-size: 1.1rem;
+        }
+        .card h4 {
+            color: var(--green);
+            margin: 1rem 0 0.5rem;
+            font-size: 0.95rem;
+        }
+        .card p, .card li { color: var(--text-muted); }
+        .card ul, .card ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+        .card li { margin-bottom: 0.3rem; }
+
+        code {
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.85rem;
+            color: var(--green);
+        }
+        pre {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-x: auto;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            color: var(--text-muted);
+            margin: 0.75rem 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.75rem 0;
+            font-size: 0.88rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.6rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+        th { color: var(--accent); font-weight: 600; }
+        td { color: var(--text-muted); }
+        tr:hover td { background: #f8fafc; }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-green { background: #dcfce7; color: var(--green); }
+        .badge-yellow { background: #fef3c7; color: var(--yellow); }
+        .badge-red { background: #fee2e2; color: var(--red); }
+        .badge-purple { background: #ede9fe; color: var(--purple); }
+        .badge-blue { background: #e0f2fe; color: var(--accent); }
+
+        .arch-diagram {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+            font-family: 'Cascadia Code', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            color: var(--text-muted);
+            white-space: pre;
+            overflow-x: auto;
+        }
+        .flow-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            border-left: 3px solid var(--accent-dim);
+            background: #f0f9ff;
+            border-radius: 0 6px 6px 0;
+        }
+        .flow-step .step-num {
+            background: var(--accent-dim);
+            color: white;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; font-weight: 700;
+            flex-shrink: 0;
+        }
+        .flow-step .step-content { flex: 1; }
+        .flow-step .step-content strong { color: var(--text); }
+
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+        @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Licensing Intelligence MCP</h1>
+        <p>A proof-of-concept MCP server that exposes MathWorks licensing &amp; entitlement data to AI agents — with role-gated write tools, audit logging, and a custom agent host.</p>
+    </header>
+
+    <div class="tab-container">
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="architecture">Architecture</button>
+            <button class="tab-btn" data-tab="mcp-server">MCP Server</button>
+            <button class="tab-btn" data-tab="tools">Tools (13)</button>
+            <button class="tab-btn" data-tab="security">Security &amp; Identity</button>
+            <button class="tab-btn" data-tab="data-model">Data Model</button>
+            <button class="tab-btn" data-tab="agent-host">Agent Host</button>
+            <button class="tab-btn" data-tab="demo">Demo Flow</button>
+            <button class="tab-btn" data-tab="startup">Startup Guide</button>
+        </nav>
+
+        <!-- ════════════════════ OVERVIEW ════════════════════ -->
+        <div class="tab-panel active" id="overview">
+            <div class="card">
+                <h3>What Is This Project?</h3>
+                <p>This is a <strong>local proof-of-concept</strong> that demonstrates how AI agents can interact with enterprise licensing systems through the <strong>Model Context Protocol (MCP)</strong> — an open standard by Anthropic that gives agents structured, typed access to external tools and data.</p>
+                <p style="margin-top:0.75rem">Instead of building a chatbot wrapper, this project creates a <strong>governed capability surface</strong> where:</p>
+                <ul>
+                    <li>Each tool maps to a well-defined domain operation</li>
+                    <li>Write actions are audited with full reasoning chains</li>
+                    <li>Access is role-scoped from the ground up (CS-L1, CS-L2, CS-L3)</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Two Agent Personas, One Server</h3>
+                <div class="two-col">
+                    <div>
+                        <h4>Query Agent (Read Surface)</h4>
+                        <p>Open access. Answers "what is the current state of X?" — license status, entitlements, seat counts, products.</p>
+                        <p style="margin-top:0.5rem"><span class="badge badge-green">6 read tools</span></p>
+                    </div>
+                    <div>
+                        <h4>CS Action Agent (Write Surface)</h4>
+                        <p>Role-gated. Every write is audited. The agent proposes actions; actions execute under a CS rep's verified identity.</p>
+                        <p style="margin-top:0.5rem"><span class="badge badge-yellow">7 write tools</span> <span class="badge badge-purple">3 role tiers</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Tech Stack</h3>
+                <table>
+                    <tr><th>Component</th><th>Technology</th><th>Why</th></tr>
+                    <tr><td>MCP Server</td><td>Python 3.13 + <code>mcp</code> SDK (FastMCP)</td><td>Best SDK maturity for MCP</td></tr>
+                    <tr><td>Database</td><td>SQLite (local)</td><td>Zero infra, mirrors MS SQL concepts</td></tr>
+                    <tr><td>ORM</td><td>SQLAlchemy 2.0</td><td>Clean query abstraction, easy DB swap later</td></tr>
+                    <tr><td>Transport</td><td>stdio (JSON-RPC 2.0)</td><td>Standard for local MCP servers</td></tr>
+                    <tr><td>Client</td><td>Claude Desktop / Custom Agent Host</td><td>Install via config JSON</td></tr>
+                    <tr><td>Agent Host</td><td>FastAPI + Anthropic SDK</td><td>Custom web UI with MCP bridge</td></tr>
+                    <tr><td>Authentication</td><td>Keycloak (Docker) + python-jose</td><td>OIDC login; local stand-in for PingID</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Project Structure</h3>
+                <pre>Licensing-MCP/
+├── licensing_mcp/           # The MCP server (core of the project)
+│   ├── server.py            # Entry point — imports tools to register them
+│   ├── server_instance.py   # Singleton FastMCP app
+│   ├── models.py            # SQLAlchemy ORM — all 17 tables
+│   ├── database.py          # Session factory + DB path config
+│   ├── identity.py          # CS actor resolution + permission checks
+│   ├── cs_executor.py       # Write pipeline: gate → mutate → audit → commit
+│   ├── elicitation.py       # MCP elicitation schema base class
+│   ├── prompts.py           # User-invocable MCP prompts (2)
+│   ├── data_access/         # Query layer (→ microservice calls in prod)
+│   │   ├── license_queries.py
+│   │   ├── write_queries.py
+│   │   └── audit.py
+│   └── tools/               # One file per MCP tool (13 total)
+├── agent/                   # Custom agent host (FastAPI + Claude API)
+│   ├── app.py               # Web server — auth endpoints + /api/chat
+│   ├── auth.py              # Keycloak JWT validation + email extraction
+│   ├── agent_loop.py        # Hand-rolled agentic loop
+│   ├── mcp_bridge.py        # MCP client connecting to licensing-mcp
+│   └── static/index.html    # Chat UI (login overlay + sign out)
+├── data/licensing.db        # Seeded SQLite database (committed)
+├── scripts/seed.py          # Data generation script
+└── slides/                  # Slidev presentation deck</pre>
+            </div>
+        </div>
+
+        <!-- ════════════════════ ARCHITECTURE ════════════════════ -->
+        <div class="tab-panel" id="architecture">
+            <div class="card">
+                <h3>High-Level Architecture</h3>
+                <div class="arch-diagram">┌─────────────────────────────────────────────────┐
+│              Browser (Chat UI)                   │
+│  "jane.doe can't activate Simulink"              │
+└──────┬──────────────────────────────────────────┘
+       │ login / callback (OIDC Authorization Code)
+       ▼
+┌─────────────────────────────────────────────────┐
+│       Keycloak (Docker, port 8080)               │
+│  Realm: licensing-mcp  Client: licensing-agent   │
+│  Issues signed JWT with email claim              │
+└──────┬──────────────────────────────────────────┘
+       │ JWT → email extracted → session cookie set
+       ▼
+┌─────────────────────────────────────────────────┐
+│   Custom Agent Host (FastAPI, port 8100)         │
+│  auth.py: validates JWT, extracts email          │
+│  app.py:  per-session MCPBridge(actor_email)     │
+│  agent_loop.py: Claude API ↔ tool calls          │
+└──────┬──────────────────────────────────────────┘
+       │  CS_ACTOR_ID=email  (stdio / JSON-RPC 2.0)
+       ▼
+┌─────────────────────────────────────────────────┐
+│            licensing-mcp Server                  │
+│  ┌───────────────────────────────────────────┐  │
+│  │           Tool Router                     │  │
+│  │  • Identity resolver (CS_ACTOR_ID → DB)   │  │
+│  │  • Role / permission gate                 │  │
+│  │  • Audit log writer                       │  │
+│  └─────────────────┬─────────────────────────┘  │
+│                    │                             │
+│  ┌─────────────────▼─────────────────────────┐  │
+│  │  Read Tools (open)  │  Write Tools (gated) │  │
+│  │  6 tools            │  7 tools             │  │
+│  └─────────────────────┴─────────────────────┘  │
+└──────────────────────┬───────────────────────────┘
+                       │  SQLAlchemy ORM
+                       ▼
+┌─────────────────────────────────────────────────┐
+│         SQLite (data/licensing.db)               │
+│  17 tables: licensing + entitlement + CS + audit │
+└─────────────────────────────────────────────────┘</div>
+            </div>
+
+            <div class="card">
+                <h3>Layered Design</h3>
+                <p>The codebase is organized into clean layers with strict dependency direction (top calls down, never up):</p>
+                <table>
+                    <tr><th>Layer</th><th>Files</th><th>Responsibility</th></tr>
+                    <tr><td><span class="badge badge-blue">Interface</span></td><td><code>tools/*.py</code>, <code>prompts.py</code></td><td>MCP tool definitions — descriptions, schemas, error shaping. Delegates all logic downward.</td></tr>
+                    <tr><td><span class="badge badge-yellow">Pipeline</span></td><td><code>cs_executor.py</code>, <code>identity.py</code></td><td>Write pipeline: resolve identity → role gate → mutate → audit → atomic commit</td></tr>
+                    <tr><td><span class="badge badge-green">Data Access</span></td><td><code>data_access/*.py</code></td><td>SQLAlchemy queries. In production, this becomes authenticated HTTP calls to microservices.</td></tr>
+                    <tr><td><span class="badge badge-purple">Foundation</span></td><td><code>models.py</code>, <code>database.py</code></td><td>ORM models (17 tables), session factory, DB path configuration</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Key Design Principle: Isolation of Data Access</h3>
+                <p>The <code>data_access/</code> layer is the ONLY code that knows how data is fetched. In the POC it's SQLAlchemy queries; in production it becomes signed HTTP calls to microservices. The tool layer above never changes:</p>
+                <pre># POC — direct SQLAlchemy query
+def get_license(license_id: str, db: Session) -> dict:
+    return db.query(License).filter(License.id == license_id).first()
+
+# Production — signed call to the Licensing microservice
+def get_license(license_id: str) -> dict:
+    token = sign_service_token(private_key=MCP_PRIVATE_KEY, audience="licensing-service")
+    headers = {"Authorization": f"Bearer {token}"}
+    return httpx.get(f"{LICENSING_API}/v1/licenses/{license_id}", headers=headers)</pre>
+            </div>
+
+            <div class="card">
+                <h3>Transport: stdio over JSON-RPC 2.0</h3>
+                <p>The MCP server runs as a <strong>subprocess</strong> of the client (Claude Desktop or the custom agent host). Communication flows over stdin/stdout as JSON-RPC 2.0 messages. There is no network port, no TLS — process isolation IS the security boundary for the POC.</p>
+                <p style="margin-top:0.5rem">In production: swap to <strong>Streamable HTTP</strong> transport with OAuth 2.1 bearer tokens on every request.</p>
+            </div>
+        </div>
+
+        <!-- ════════════════════ MCP SERVER ════════════════════ -->
+        <div class="tab-panel" id="mcp-server">
+            <div class="card">
+                <h3>What Is MCP?</h3>
+                <p>The <strong>Model Context Protocol (MCP)</strong> is an open standard by Anthropic that allows AI agents to securely access external tools and data. Think of it as "REST APIs for agents" — a typed interface contract between an AI consumer and a capability provider.</p>
+                <p style="margin-top:0.75rem">MCP has three primitives:</p>
+                <table>
+                    <tr><th>Primitive</th><th>Invoked By</th><th>Purpose</th></tr>
+                    <tr><td><strong>Tools</strong></td><td>The model (AI)</td><td>Actions the agent can call — like function calls</td></tr>
+                    <tr><td><strong>Resources</strong></td><td>The application</td><td>Context attached by the client app (not used here)</td></tr>
+                    <tr><td><strong>Prompts</strong></td><td>The user</td><td>Conversation starters from a menu — pre-built workflows</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Server Entry Point: <code>server.py</code></h3>
+                <p>The entry point's only job is to <strong>import tool modules</strong> (which triggers registration via <code>@mcp.tool()</code> decorators) and then run the server. Adding a new tool = adding one import line.</p>
+                <pre># Tool registrations — importing triggers @mcp.tool() decorator
+from licensing_mcp.tools import get_license_status          # noqa: F401
+from licensing_mcp.tools import check_user_entitlements     # noqa: F401
+# ... 11 more imports ...
+
+from licensing_mcp.server_instance import mcp
+
+def main():
+    mcp.run(transport="stdio")</pre>
+            </div>
+
+            <div class="card">
+                <h3>MCP Prompts: <code>prompts.py</code></h3>
+                <p>Two user-invocable prompts appear in Claude Desktop's "+" menu. They inject a structured instruction as the user's message, which then drives multi-step tool calls:</p>
+                <table>
+                    <tr><th>Prompt</th><th>What It Does</th></tr>
+                    <tr><td><code>license_health_review</code></td><td>Full account health check — pulls all licenses, flags expiring/over-capacity/under-used ones</td></tr>
+                    <tr><td><code>diagnose_activation_issue</code></td><td>CS Tier-1 diagnostic workflow: check entitlements → check seats → find stale activations → propose fix</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Elicitation: <code>elicitation.py</code></h3>
+                <p>MCP supports <strong>server-driven confirmation forms</strong> — the server can ask the user to confirm before executing a destructive action. The <code>ElicitationBase</code> class sanitizes Pydantic schemas to comply with MCP's restriction that elicitation fields must be flat primitives (no unions, no null defaults).</p>
+                <p style="margin-top:0.5rem">Used by <code>revoke_activation</code> to show the rep exactly what will be revoked before executing.</p>
+            </div>
+        </div>
+
+        <!-- ════════════════════ TOOLS ════════════════════ -->
+        <div class="tab-panel" id="tools">
+            <div class="card">
+                <h3>Read Tools <span class="badge badge-green">Open Access</span></h3>
+                <p>These tools are callable by any agent without identity or role requirements:</p>
+                <table>
+                    <tr><th>Tool</th><th>Answers</th><th>File</th></tr>
+                    <tr><td><code>get_license_status</code></td><td>Is L-99001 active? Seat utilization? Expiry?</td><td>tools/get_license_status.py</td></tr>
+                    <tr><td><code>check_user_entitlements</code></td><td>What can jane.doe run? Any stale activations?</td><td>tools/check_user_entitlements.py</td></tr>
+                    <tr><td><code>list_licenses_by_entity</code></td><td>What licenses does Acme Corp hold?</td><td>tools/list_licenses_by_entity.py</td></tr>
+                    <tr><td><code>get_license_products</code></td><td>What products are on this license?</td><td>tools/get_license_products.py</td></tr>
+                    <tr><td><code>get_license_administrators</code></td><td>Who manages this license?</td><td>tools/get_license_administrators.py</td></tr>
+                    <tr><td><code>search_entitlements</code></td><td>Enterprise licenses expiring in 60 days? (with elicitation narrowing)</td><td>tools/search_entitlements.py</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>CS Write Tools <span class="badge badge-yellow">Role-Gated + Audited</span></h3>
+                <p>Every write tool requires a CS actor identity, a business justification (<code>reason</code>), and the actor must hold the required role. Every call — success, failure, or rejection — produces an audit record.</p>
+                <table>
+                    <tr><th>Tool</th><th>Required Role</th><th>What It Does</th></tr>
+                    <tr><td><code>add_user_to_license</code></td><td><span class="badge badge-green">CS-L1</span></td><td>Add a user to a license's user list</td></tr>
+                    <tr><td><code>revoke_activation</code></td><td><span class="badge badge-green">CS-L1</span></td><td>Deactivate a product activation (frees a seat). Has confirmation step.</td></tr>
+                    <tr><td><code>reset_installation_slot</code></td><td><span class="badge badge-yellow">CS-L2</span></td><td>Clear an installation record for reinstall on new machine</td></tr>
+                    <tr><td><code>update_seat_count</code></td><td><span class="badge badge-yellow">CS-L2</span></td><td>Increase or decrease seat count on a license</td></tr>
+                    <tr><td><code>extend_license_expiry</code></td><td><span class="badge badge-red">CS-L3</span></td><td>Extend a license's expiration date</td></tr>
+                    <tr><td><code>transfer_license_admin</code></td><td><span class="badge badge-red">CS-L3</span></td><td>Reassign license administration to a new user</td></tr>
+                    <tr><td><code>get_audit_history</code></td><td><span class="badge badge-purple">any CS</span></td><td>View audit trail for a license</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Tool Anatomy: <code>revoke_activation.py</code> (Example)</h3>
+                <p>This is the most complex tool — it demonstrates elicitation (confirmation), the executor pipeline, and graceful fallback for clients that don't support forms:</p>
+                <pre>@mcp.tool()
+async def revoke_activation(user_email, product_name, machine_id, reason, confirm=False):
+    # 1. Read-only lookup for confirmation context
+    details = find_activation(session, user_email, product_name, machine_id)
+
+    # 2. If client supports elicitation → show confirmation form
+    if client_can_elicit:
+        response = await ctx.elicit(message="Confirm revocation: ...", schema=ConfirmRevocation)
+        if not confirmed: return {"cancelled": True}
+    # 3. Fallback: return details, ask human, caller calls again with confirm=true
+    elif not confirm:
+        return {"confirmation_required": True, "details": details}
+
+    # 4. Execute through the write pipeline (identity → gate → mutate → audit)
+    return execute_cs_write(tool_name="revoke_activation", reason=reason, mutate=...)</pre>
+            </div>
+        </div>
+
+        <!-- ════════════════════ SECURITY & IDENTITY ════════════════════ -->
+        <div class="tab-panel" id="security">
+            <div class="card">
+                <h3>The CS Write Executor: <code>cs_executor.py</code></h3>
+                <p>This is the security centerpiece. <strong>Every write tool funnels through one function</strong> — <code>execute_cs_write()</code>. This guarantees the critical sequence is never forgotten:</p>
+                <div class="flow-step"><span class="step-num">1</span><div class="step-content"><strong>Resolve Identity</strong> — read CS_ACTOR_ID, look up the user and their highest role</div></div>
+                <div class="flow-step"><span class="step-num">2</span><div class="step-content"><strong>Permission Gate</strong> — check if the actor's role is granted this tool in cs_permissions table. <em>Rejections are audited.</em></div></div>
+                <div class="flow-step"><span class="step-num">3</span><div class="step-content"><strong>Mutate</strong> — execute the domain operation (passed as a closure). Captures before/after state.</div></div>
+                <div class="flow-step"><span class="step-num">4</span><div class="step-content"><strong>Audit</strong> — write the audit record in the SAME transaction as the mutation</div></div>
+                <div class="flow-step"><span class="step-num">5</span><div class="step-content"><strong>Atomic Commit</strong> — one <code>session.commit()</code> covers both mutation + audit. If either fails, both roll back. <em>An unaudited write is structurally impossible.</em></div></div>
+            </div>
+
+            <div class="card">
+                <h3>Identity Resolution: <code>identity.py</code></h3>
+                <p>Identity is resolved <strong>per call</strong>, never cached. Three functions:</p>
+                <table>
+                    <tr><th>Function</th><th>What It Does</th></tr>
+                    <tr><td><code>resolve_actor(session)</code></td><td>Reads <code>CS_ACTOR_ID</code> env var, looks up user + highest role in DB. Returns {id, email, name, role, level}.</td></tr>
+                    <tr><td><code>has_permission(session, actor, tool)</code></td><td>Checks if the actor's role has a grant for this tool in <code>cs_permissions</code> table.</td></tr>
+                    <tr><td><code>minimum_role_for(session, tool)</code></td><td>Returns the lowest role that CAN call this tool — used in rejection messages for clear escalation guidance.</td></tr>
+                </table>
+                <h4>Current (Keycloak) vs. Production</h4>
+                <table>
+                    <tr><th>Now (Keycloak)</th><th>Production</th></tr>
+                    <tr><td>Keycloak JWT (validated by agent host) → <code>CS_ACTOR_ID</code></td><td>PingID JWT (same protocol, swap the URL)</td></tr>
+                    <tr><td>Role from <code>cs_role_members</code> table (DB is authoritative)</td><td>Same — role from DB, not from JWT claims</td></tr>
+                    <tr><td>Permissions in SQLite table</td><td>Same pattern — data change, not a code deploy</td></tr>
+                    <tr><td>In-memory session dict (single process)</td><td>Redis session store (multi-process / multi-host)</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Audit Log Design</h3>
+                <p>The audit record is <strong>richer with an agent than a human</strong>. The agent's full reasoning chain becomes the <code>reason</code> field automatically:</p>
+                <pre>{
+  "audit_id": "AUD-02001",
+  "timestamp": "2026-05-19T14:32:11Z",
+  "cs_actor": "rep.sarah@mathworks.com",
+  "cs_role": "CS-L1",
+  "action": "revoke_activation",
+  "target": {"user": "jane.doe@acme.com", "product": "Simulink", "machine_id": "MAC-OLD-7291"},
+  "reason": "User reported inability to activate Simulink on new machine. Checked
+    entitlements — user is on L-99001 which includes Simulink. Seats at capacity (10/10).
+    Identified inactive activation on decommissioned machine (last heartbeat 94 days ago).
+    Revoking to free a seat for the new machine.",
+  "outcome": "success",
+  "before_state": {"seat_utilization": "10/10"},
+  "after_state": {"seat_utilization": "9/10"}
+}</pre>
+            </div>
+
+            <div class="card">
+                <h3>Production Security Architecture</h3>
+                <p>The project includes a comprehensive security document covering the full production posture:</p>
+                <div class="two-col">
+                    <div>
+                        <h4>Auth Boundary 1: User → MCP Server</h4>
+                        <ul>
+                            <li>OAuth 2.1 + PKCE via PingID</li>
+                            <li>Group-gated access (e.g., "MCP-LicensingTool-Approved")</li>
+                            <li>JWT with role claims (cs_tier)</li>
+                            <li>Adding/removing users = IdP group change (no deploy)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4>Auth Boundary 2: MCP Server → Microservices</h4>
+                        <ul>
+                            <li>Asymmetric key-based service auth (RFC 7523)</li>
+                            <li>MCP server signs requests with its private key</li>
+                            <li>Microservices verify with registered public key</li>
+                            <li>Standard service onboarding process</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════════════════ DATA MODEL ════════════════════ -->
+        <div class="tab-panel" id="data-model">
+            <div class="card">
+                <h3>17 Tables Across 4 Schema Groups</h3>
+                <p>The database is seeded with realistic data: 99 real companies from the AWS SaaS Sales dataset + Faker-generated records. ~500 entities, ~800 licenses, ~3,900 users, ~22,000 entitlements, 51 CS reps, 2,000 pre-seeded audit records.</p>
+            </div>
+
+            <div class="card">
+                <h3>Licensing & Entitlement Schema (12 tables)</h3>
+                <table>
+                    <tr><th>Table</th><th>Purpose</th><th>Key Fields</th></tr>
+                    <tr><td><code>entities</code></td><td>Companies, universities, individuals</td><td>name, entity_type_id, industry, country</td></tr>
+                    <tr><td><code>entity_types</code></td><td>enterprise, academic, individual, government</td><td>name, description</td></tr>
+                    <tr><td><code>licenses</code></td><td>License records (L-XXXXX format)</td><td>entity_id, type, status, seat_count, expiry_date</td></tr>
+                    <tr><td><code>license_types</code></td><td>enterprise, academic, individual, concurrent, trial</td><td>name</td></tr>
+                    <tr><td><code>products</code></td><td>MATLAB, Simulink, toolboxes (~20)</td><td>name, product_code, category, base_price</td></tr>
+                    <tr><td><code>license_products</code></td><td>Products on a license (M:N)</td><td>license_id, product_id</td></tr>
+                    <tr><td><code>users</code></td><td>End users</td><td>email, first/last name, entity_id</td></tr>
+                    <tr><td><code>license_users</code></td><td>Users on a license (membership)</td><td>license_id, user_id, status</td></tr>
+                    <tr><td><code>license_admins</code></td><td>Admins who manage a license</td><td>license_id, user_id</td></tr>
+                    <tr><td><code>entitlements</code></td><td>user x license x product (denormalized)</td><td>user_id, license_id, product_id, status</td></tr>
+                    <tr><td><code>installations</code></td><td>Where software is installed</td><td>user_id, product_id, machine_id, os</td></tr>
+                    <tr><td><code>activations</code></td><td>Active activations with heartbeat</td><td>user_id, product_id, machine_id, license_id, last_heartbeat</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>CS Identity & Permissions Schema (4 tables)</h3>
+                <table>
+                    <tr><th>Table</th><th>Purpose</th><th>Key Fields</th></tr>
+                    <tr><td><code>cs_users</code></td><td>CS representative accounts</td><td>email, first/last name</td></tr>
+                    <tr><td><code>cs_roles</code></td><td>Role definitions (CS-L1, CS-L2, CS-L3)</td><td>name, level (1/2/3)</td></tr>
+                    <tr><td><code>cs_role_members</code></td><td>Which users have which roles</td><td>cs_user_id, cs_role_id</td></tr>
+                    <tr><td><code>cs_permissions</code></td><td>Which roles can call which tools</td><td>role_id, tool_name</td></tr>
+                </table>
+                <p style="margin-top:0.75rem"><strong>Key insight:</strong> Permissions are DATA, not code. Adding a new tool to a role is a table insert, not a deploy — just like editing an IdP group in production.</p>
+            </div>
+
+            <div class="card">
+                <h3>Audit Log Schema (1 table)</h3>
+                <table>
+                    <tr><th>Table</th><th>Purpose</th><th>Key Fields</th></tr>
+                    <tr><td><code>cs_audit_log</code></td><td>Immutable append-only log</td><td>audit_id, timestamp, cs_actor_id, cs_role, action, tool_name, reason, outcome, before_state_json, after_state_json</td></tr>
+                </table>
+                <p style="margin-top:0.5rem">Every field is captured: who (actor + role), what (tool + args), when (timestamp), why (reason), and the state change (before/after JSON). The <code>outcome</code> field is one of: <span class="badge badge-green">success</span> <span class="badge badge-red">failure</span> <span class="badge badge-yellow">rejected</span></p>
+            </div>
+        </div>
+
+        <!-- ════════════════════ AGENT HOST ════════════════════ -->
+        <div class="tab-panel" id="agent-host">
+            <div class="card">
+                <h3>Custom Agent Host (<code>agent/</code>)</h3>
+                <p>Beyond Claude Desktop, the project includes a <strong>custom agent host</strong> — a FastAPI web server with Keycloak OIDC login, a chat UI, and a per-user MCP bridge. This demonstrates that the MCP server is client-agnostic and that the auth boundary lives in the host layer.</p>
+                <div class="arch-diagram">Browser → /login → Keycloak → /callback → session cookie
+Browser Chat UI  →  POST /api/chat (cookie)  →  Agent Loop  →  Claude Sonnet
+                                                      ↓ tool calls
+                                          per-session MCPBridge(actor_email)
+                                                      ↓ CS_ACTOR_ID=email
+                                          licensing-mcp (stdio subprocess)</div>
+            </div>
+
+            <div class="card">
+                <h3>Component Breakdown</h3>
+                <div class="two-col">
+                    <div>
+                        <h4><code>auth.py</code> — JWT Validation</h4>
+                        <ul>
+                            <li>Fetches Keycloak JWKS (public keys) — cached with <code>lru_cache</code></li>
+                            <li>Validates JWT: signature, issuer, expiry</li>
+                            <li>Extracts <code>email</code> claim → becomes <code>CS_ACTOR_ID</code></li>
+                            <li>Single responsibility: prove who the user is</li>
+                        </ul>
+                        <h4 style="margin-top:1rem"><code>app.py</code> — FastAPI Server</h4>
+                        <ul>
+                            <li><code>GET /login</code> — redirect to Keycloak (with <code>&amp;prompt=login</code>)</li>
+                            <li><code>GET /callback</code> — exchange auth code → JWT → session cookie</li>
+                            <li><code>GET /logout</code> — stop bridge, clear session, redirect home</li>
+                            <li><code>POST /api/chat</code> — cookie-gated; lazy-starts bridge on first message</li>
+                            <li><code>POST /api/chat/reset</code> — clears message history (New Chat)</li>
+                            <li><code>GET /api/tools</code> — also the frontend auth probe (returns 401 if not logged in)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4><code>mcp_bridge.py</code> — MCP Client</h4>
+                        <ul>
+                            <li>One bridge per authenticated session (not one global bridge)</li>
+                            <li>Constructor takes <code>actor_email</code>; sets <code>CS_ACTOR_ID</code> env var on the subprocess</li>
+                            <li>Spawns <code>python -m licensing_mcp</code> as a stdio subprocess</li>
+                            <li>Converts MCP tool definitions → Claude API format (one field rename)</li>
+                            <li><code>call_tool(name, args)</code> — executes a tool and returns text</li>
+                        </ul>
+                        <h4 style="margin-top:1rem"><code>static/index.html</code> — Chat UI</h4>
+                        <ul>
+                            <li>On load: calls <code>/api/tools</code> — shows login overlay on 401</li>
+                            <li>Login overlay: "Sign in" button → <code>/login</code></li>
+                            <li>Header shows authenticated user's email + Sign out link</li>
+                            <li>New Chat calls <code>/api/chat/reset</code> (clears server-side history)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>The Agent Loop: <code>agent_loop.py</code></h3>
+                <p>A hand-rolled agentic loop that does what Claude Desktop does internally. One user turn may require multiple API round-trips:</p>
+                <div class="flow-step"><span class="step-num">1</span><div class="step-content"><strong>Send</strong> conversation + tool definitions to Claude API</div></div>
+                <div class="flow-step"><span class="step-num">2</span><div class="step-content"><strong>Check stop_reason</strong>: if <code>"end_turn"</code> → done. If <code>"tool_use"</code> → step 3</div></div>
+                <div class="flow-step"><span class="step-num">3</span><div class="step-content"><strong>Execute</strong> each tool call via the MCP bridge</div></div>
+                <div class="flow-step"><span class="step-num">4</span><div class="step-content"><strong>Append</strong> assistant content + tool_result blocks to history</div></div>
+                <div class="flow-step"><span class="step-num">5</span><div class="step-content"><strong>Loop</strong> back to step 1 (max 15 iterations as circuit breaker)</div></div>
+                <p style="margin-top:0.75rem"><strong>Key details:</strong></p>
+                <ul>
+                    <li>Uses <code>claude-sonnet-4-6</code> model with adaptive thinking</li>
+                    <li>Prompt caching (<code>cache_control: ephemeral</code>) reduces cost by ~90% on repeated prefixes</li>
+                    <li>Assistant turn content is appended VERBATIM (tool_use blocks must stay for ID pairing)</li>
+                    <li>System prompt guides the agent to diagnose before acting, write full justifications, and get confirmation before destructive actions</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- ════════════════════ DEMO FLOW ════════════════════ -->
+        <div class="tab-panel" id="demo">
+            <div class="card">
+                <h3>Demo Data (Pre-Wired)</h3>
+                <table>
+                    <tr><th>Item</th><th>Value</th></tr>
+                    <tr><td>Entity</td><td>Acme Corp</td></tr>
+                    <tr><td>License</td><td><code>L-99001</code> — 10 seats, 10/10 occupied, MATLAB + Simulink</td></tr>
+                    <tr><td>Demo user</td><td><code>jane.doe@acmecorp.com</code> — entitled to Simulink, stale activation on MAC-OLD-7291 (94 days inactive)</td></tr>
+                    <tr><td>Demo CS rep</td><td><code>rep.sarah@mathworks.com</code> — CS-L1 role</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Story 1: Customer Query Agent</h3>
+                <p><em>Setting: An agent answering questions about an enterprise account</em></p>
+                <div class="flow-step"><span class="step-num">1</span><div class="step-content"><strong>"What licenses does Acme Corp have?"</strong> → <code>list_licenses_by_entity</code></div></div>
+                <div class="flow-step"><span class="step-num">2</span><div class="step-content"><strong>"Is their enterprise license active? When does it expire?"</strong> → <code>get_license_status</code></div></div>
+                <div class="flow-step"><span class="step-num">3</span><div class="step-content"><strong>"What products does it cover?"</strong> → <code>get_license_products</code></div></div>
+                <div class="flow-step"><span class="step-num">4</span><div class="step-content"><strong>"Which enterprise licenses expire in 60 days?"</strong> → <code>search_entitlements</code></div></div>
+                <p style="margin-top:0.75rem"><strong>Narrative:</strong> Clean read-only access. Agent synthesizes multi-table answers from plain language. No SQL. No dashboard.</p>
+            </div>
+
+            <div class="card">
+                <h3>Story 2: CS Action Agent</h3>
+                <p><em>Setting: A CS rep asking the agent to resolve a customer activation issue</em></p>
+                <div class="flow-step"><span class="step-num">1</span><div class="step-content"><strong>"jane.doe@acme.com can't activate Simulink on her new laptop."</strong><br>→ <code>check_user_entitlements</code> — confirms she IS entitled to Simulink</div></div>
+                <div class="flow-step"><span class="step-num">2</span><div class="step-content"><strong>"Why can't she activate?"</strong><br>→ <code>get_license_status</code> — seats at capacity (10/10)</div></div>
+                <div class="flow-step"><span class="step-num">3</span><div class="step-content"><strong>"Any stale activations?"</strong><br>→ finds activation on MAC-OLD-7291, heartbeat 94 days ago</div></div>
+                <div class="flow-step"><span class="step-num">4</span><div class="step-content"><strong>"Revoke that activation."</strong><br>→ <code>revoke_activation</code> with confirmation → seat freed, audit record with full reasoning</div></div>
+                <div class="flow-step"><span class="step-num">5</span><div class="step-content"><strong>"Show the audit trail."</strong><br>→ <code>get_audit_history</code> — shows the action just taken + prior history</div></div>
+                <p style="margin-top:0.75rem"><strong>Narrative:</strong> The agent doesn't just answer — it <em>diagnoses, proposes, acts, and audits</em>. The audit record is richer than anything a human would write. This is the demo moment that lands with leadership.</p>
+            </div>
+
+            <div class="card">
+                <h3>Path to Production</h3>
+                <div class="two-col">
+                    <div>
+                        <h4>Near-term (3-6 months)</h4>
+                        <ul>
+                            <li>Replace SQLite with MS SQL Server (config change via SQLAlchemy)</li>
+                            <li>Replace env-var identity with real OAuth/SSO tokens</li>
+                            <li>Ship narrow CS-L1 copilot for one issue pattern (activation fixes)</li>
+                            <li>Measure resolution time vs. manual baseline</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4>Medium-term (6-12 months)</h4>
+                        <ul>
+                            <li>Expand write tool surface and role tiers</li>
+                            <li>Multi-agent: licensing → billing → account management</li>
+                            <li>Customer-facing self-service agent for Tier-1 issues</li>
+                            <li>Hosted MCP with multi-tenancy and audit compliance</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════════════════ STARTUP GUIDE ════════════════════ -->
+        <div class="tab-panel" id="startup">
+            <div class="card">
+                <h3>Prerequisites</h3>
+                <ul>
+                    <li>Docker Desktop installed and running</li>
+                    <li>Python 3.13 with the project venv created (<code>python -m venv .venv</code>)</li>
+                    <li>Dependencies installed: <code>pip install -r requirements.txt</code></li>
+                    <li><code>.env</code> file in project root with <code>ANTHROPIC_API_KEY=sk-ant-...</code></li>
+                    <li>Database seeded: <code>python scripts/seed.py</code> (only needed once)</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Every-Session Startup</h3>
+                <p>Run these two commands in separate terminals each time you work on the project.</p>
+
+                <h4>Terminal 1 — Keycloak</h4>
+                <pre><code>docker start licensing-keycloak</code></pre>
+                <p style="margin-top:0.5rem">Wait ~10 seconds. Verify it's up:</p>
+                <pre><code>curl -s http://localhost:8080/realms/licensing-mcp/.well-known/openid-configuration | python3 -m json.tool | head -5</code></pre>
+                <p style="margin-top:0.5rem">Should return JSON with <code>issuer</code>, <code>token_endpoint</code> etc.</p>
+
+                <h4 style="margin-top:1.25rem">Terminal 2 — Agent Host</h4>
+                <pre><code>cd /path/to/Licensing-MCP
+source .venv/bin/activate
+uvicorn agent.app:app --port 8100</code></pre>
+                <p style="margin-top:0.5rem">You'll see <code>Uvicorn running on http://127.0.0.1:8100</code>. The MCP bridge starts lazily — you won't see it until the first chat message.</p>
+            </div>
+
+            <div class="card">
+                <h3>First Login Flow</h3>
+                <div class="flow-step"><span class="step-num">1</span><div class="step-content">Open <strong>http://localhost:8100</strong> — you should see the <strong>login overlay</strong> (not the chat)</div></div>
+                <div class="flow-step"><span class="step-num">2</span><div class="step-content">Click <strong>Sign in</strong> → redirected to Keycloak at port 8080</div></div>
+                <div class="flow-step"><span class="step-num">3</span><div class="step-content">Log in as one of the test users (e.g. <code>rep.sarah@mathworks.com</code> / <code>password123</code>)</div></div>
+                <div class="flow-step"><span class="step-num">4</span><div class="step-content">Redirected back to the chat. Header shows the email. Terminal logs: <em>MCP bridge up for rep.sarah@mathworks.com — 13 tools</em> (on first message)</div></div>
+                <div class="flow-step"><span class="step-num">5</span><div class="step-content">Send a message — e.g. <em>"What licenses does Acme Corp have?"</em></div></div>
+            </div>
+
+            <div class="card">
+                <h3>Test Users (pre-seeded in DB + Keycloak)</h3>
+                <table>
+                    <tr><th>Email</th><th>Password</th><th>CS Role</th><th>Can Call</th></tr>
+                    <tr><td><code>rep.sarah@mathworks.com</code></td><td><code>password123</code></td><td><span class="badge badge-green">CS-L1</span></td><td>add_user, revoke_activation, get_audit_history</td></tr>
+                    <tr><td><code>rep.mike@mathworks.com</code></td><td><code>password123</code></td><td><span class="badge badge-yellow">CS-L2</span></td><td>L1 tools + reset_installation_slot, update_seat_count</td></tr>
+                    <tr><td><code>rep.director@mathworks.com</code></td><td><code>password123</code></td><td><span class="badge badge-red">CS-L3</span></td><td>All tools including extend_license_expiry, transfer_license_admin</td></tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Switching Users</h3>
+                <p>Click <strong>Sign out</strong> in the header → login overlay reappears → click <strong>Sign in</strong> → Keycloak always shows the login form (<code>prompt=login</code> is set) → log in as a different user.</p>
+                <p style="margin-top:0.5rem">Each user gets their own MCP subprocess with their email as the actor. Audit records will show the correct actor for each.</p>
+            </div>
+
+            <div class="card">
+                <h3>Stopping</h3>
+                <pre><code># Stop the agent host
+Ctrl+C in Terminal 2
+
+# Optionally stop Keycloak (data persists in the container)
+docker stop licensing-keycloak</code></pre>
+                <p style="margin-top:0.5rem">Keycloak data (realm config, users) survives container stop/start. To start fresh, <code>docker rm licensing-keycloak</code> and re-run the setup from Part 1 of the Keycloak guide.</p>
+            </div>
+
+            <div class="card">
+                <h3>Quick Troubleshooting</h3>
+                <table>
+                    <tr><th>Symptom</th><th>Fix</th></tr>
+                    <tr><td>Login overlay doesn't appear — chat loads as-is</td><td>Hard-refresh (Cmd+Shift+R). Old cached page may have loaded.</td></tr>
+                    <tr><td>Redirected to Keycloak but login fails</td><td>Check user was created in the <code>licensing-mcp</code> realm (not master). Email must match exactly.</td></tr>
+                    <tr><td>Chat returns 500 on first message</td><td>Check terminal for traceback. Usually Keycloak is down — run <code>docker start licensing-keycloak</code>.</td></tr>
+                    <tr><td>Anthropic API 529 Overloaded</td><td>Retry. If persistent, the model in <code>agent/agent_loop.py</code> is set to <code>claude-sonnet-4-6</code>.</td></tr>
+                    <tr><td>"not a registered CS user"</td><td>Email in Keycloak doesn't match <code>cs_users.email</code> in the DB. They must be identical.</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>

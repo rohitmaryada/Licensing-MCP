@@ -4,8 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Licensing Intelligence Agent</title>
-<!-- Markdown rendering: agent replies come back as markdown (tables, bold,
-     lists). marked turns them into HTML; DOMPurify sanitizes before insert. -->
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <style>
@@ -34,7 +32,43 @@
     font-size: 14px; line-height: 1.55;
   }
 
-  /* ── Header ─────────────────────────────────────────── */
+  /* ── Login overlay ───────────────────────────────── */
+  #loginOverlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .login-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px 48px;
+    text-align: center;
+    box-shadow: var(--shadow);
+    max-width: 360px;
+    width: calc(100% - 40px);
+  }
+  .login-logo {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    display: grid; place-items: center; color: #fff;
+    font-weight: 700; font-size: 20px;
+    margin: 0 auto 20px;
+  }
+  .login-card h2 { font-size: 18px; font-weight: 640; margin-bottom: 8px; }
+  .login-card p { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  .login-btn {
+    display: inline-block;
+    background: var(--accent); color: #fff;
+    border-radius: 10px; padding: 11px 32px;
+    font-size: 14px; font-weight: 600;
+    text-decoration: none; transition: opacity .12s;
+  }
+  .login-btn:hover { opacity: .88; }
+
+  /* ── Header ─────────────────────────────────────── */
   header {
     display: flex; align-items: center; gap: 12px;
     padding: 12px 20px; background: var(--panel);
@@ -51,14 +85,18 @@
   .titles .sub { font-size: 11.5px; color: var(--muted); }
   .titles .sub .dot { color: var(--ok); }
   header .spacer { flex: 1; }
-  #newChat {
+  #userEmail {
+    font-size: 12px; color: var(--muted); margin-right: 2px;
+  }
+  #signOut, #newChat {
     font-size: 12.5px; color: var(--muted); background: transparent;
     border: 1px solid var(--border); border-radius: 8px;
     padding: 6px 12px; cursor: pointer; font-weight: 500;
+    text-decoration: none;
   }
-  #newChat:hover { background: var(--bg); color: var(--text); }
+  #signOut:hover, #newChat:hover { background: var(--bg); color: var(--text); }
 
-  /* ── Chat scroll area ───────────────────────────────── */
+  /* ── Chat scroll area ────────────────────────────── */
   #scroll { flex: 1; overflow-y: auto; }
   #chat {
     max-width: 780px; width: 100%; margin: 0 auto;
@@ -112,7 +150,7 @@
   .agent .bubble th { background: var(--bg); font-weight: 620; }
   .agent .bubble tr:nth-child(even) td { background: #fafbfc; }
 
-  /* ── Tool-call strip ────────────────────────────────── */
+  /* ── Tool-call strip ─────────────────────────────── */
   .tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 1px 4px 2px; }
   .tool-chip {
     display: inline-flex; align-items: center; gap: 5px;
@@ -123,7 +161,7 @@
   }
   .tool-chip.err { background: #fdecea; border-color: #f3c4bd; color: var(--err); }
 
-  /* ── Thinking indicator ─────────────────────────────── */
+  /* ── Thinking indicator ──────────────────────────── */
   .thinking { display: flex; align-items: center; gap: 8px; padding: 4px; color: var(--muted); font-size: 13px; }
   .dots { display: inline-flex; gap: 3px; }
   .dots span {
@@ -134,7 +172,7 @@
   .dots span:nth-child(3) { animation-delay: .3s; }
   @keyframes bounce { 0%,80%,100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
 
-  /* ── Welcome / empty state ──────────────────────────── */
+  /* ── Welcome / empty state ───────────────────────── */
   #welcome { padding: 36px 4px; }
   #welcome h2 { font-size: 19px; font-weight: 640; margin-bottom: 6px; }
   #welcome p { color: var(--muted); margin-bottom: 18px; }
@@ -147,7 +185,7 @@
   .example:hover { border-color: var(--accent); }
   .example .tag { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
 
-  /* ── Composer ───────────────────────────────────────── */
+  /* ── Composer ────────────────────────────────────── */
   .composer-wrap { background: var(--panel); border-top: 1px solid var(--border); }
   form {
     max-width: 780px; width: 100%; margin: 0 auto;
@@ -176,6 +214,17 @@
 </style>
 </head>
 <body>
+
+<!-- Login overlay — shown when not authenticated -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <div class="login-logo">L</div>
+    <h2>Licensing Intelligence Agent</h2>
+    <p>Sign in with your Keycloak account to continue.</p>
+    <a href="/login" class="login-btn">Sign in</a>
+  </div>
+</div>
+
 <header>
   <div class="logo">L</div>
   <div class="titles">
@@ -183,6 +232,8 @@
     <div class="sub" id="status"><span class="dot">●</span> connecting…</div>
   </div>
   <div class="spacer"></div>
+  <span id="userEmail"></span>
+  <a href="/logout" id="signOut" title="Sign out">Sign out</a>
   <button id="newChat" title="Start a new conversation">New chat</button>
 </header>
 
@@ -225,18 +276,27 @@ const form = document.getElementById("form");
 const input = document.getElementById("input");
 const send = document.getElementById("send");
 const welcome = document.getElementById("welcome");
-let sessionId = null;
 
 marked.setOptions({ breaks: true });
 
-fetch("/api/tools").then(r => r.json()).then(d => {
+// ── Auth check on load ───────────────────────────────────────
+fetch("/api/tools").then(r => {
+  if (r.status === 401) {
+    const overlay = document.getElementById("loginOverlay");
+    overlay.style.display = "flex";
+    return null;
+  }
+  return r.json();
+}).then(d => {
+  if (!d) return;
+  document.getElementById("userEmail").textContent = d.actor;
   document.getElementById("status").innerHTML =
-    `<span class="dot">●</span> ${d.tools.length} tools · acting as ${d.actor}`;
+    `<span class="dot">●</span> ${d.tools.length} tools`;
 }).catch(() => {
-  document.getElementById("status").innerHTML =
-    `<span style="color:var(--err)">●</span> server not reachable`;
+  document.getElementById("loginOverlay").style.display = "flex";
 });
 
+// ── Helpers ──────────────────────────────────────────────────
 function scrollDown() { scroll.scrollTop = scroll.scrollHeight; }
 
 function addMessage(role, markdown) {
@@ -282,8 +342,9 @@ function addThinking() {
   return el;
 }
 
+// ── Send message ─────────────────────────────────────────────
 async function sendMessage(text) {
-  if (welcome) welcome.remove();
+  if (welcome.parentNode) welcome.remove();
   addMessage("user", text);
   input.value = "";
   input.style.height = "auto";
@@ -294,10 +355,14 @@ async function sendMessage(text) {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, session_id: sessionId }),
+      body: JSON.stringify({ message: text }),
     });
+    if (res.status === 401) {
+      pending.remove();
+      document.getElementById("loginOverlay").style.display = "flex";
+      return;
+    }
     const data = await res.json();
-    sessionId = data.session_id;
     pending.remove();
     addToolStrip(data.tool_calls);
     addMessage("agent", data.reply);
@@ -310,13 +375,13 @@ async function sendMessage(text) {
   }
 }
 
+// ── Form submit ──────────────────────────────────────────────
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (text) sendMessage(text);
 });
 
-// Enter sends; Shift+Enter inserts a newline.
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -324,22 +389,24 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
-// Auto-grow the textarea.
 input.addEventListener("input", () => {
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, 160) + "px";
 });
 
-// Clickable example prompts.
+// ── Example prompts ──────────────────────────────────────────
 document.querySelectorAll(".example").forEach(btn => {
   btn.addEventListener("click", () => sendMessage(btn.dataset.q));
 });
 
-// New chat resets the session.
-document.getElementById("newChat").addEventListener("click", () => {
-  sessionId = null;
+// ── New chat ─────────────────────────────────────────────────
+document.getElementById("newChat").addEventListener("click", async () => {
+  await fetch("/api/chat/reset", { method: "POST" });
   chat.innerHTML = "";
-  location.reload();
+  chat.appendChild(welcome);
+  document.querySelectorAll(".example").forEach(btn => {
+    btn.addEventListener("click", () => sendMessage(btn.dataset.q));
+  });
 });
 </script>
 </body>

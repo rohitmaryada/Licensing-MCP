@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keycloak Authentication Setup — Licensing MCP</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --surface-alt: #f1f5f9;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #475569;
+            --accent: #0369a1;
+            --accent-light: #e0f2fe;
+            --green: #15803d;
+            --green-light: #dcfce7;
+            --yellow: #a16207;
+            --yellow-light: #fef3c7;
+            --red: #dc2626;
+            --red-light: #fee2e2;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            min-height: 100vh;
+        }
+        header {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 2rem;
+            text-align: center;
+        }
+        header h1 { font-size: 1.8rem; color: var(--accent); margin-bottom: 0.5rem; }
+        header p { color: var(--text-muted); max-width: 650px; margin: 0 auto; }
+
+        .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+
+        .callout {
+            background: var(--accent-light);
+            border: 1px solid #bae6fd;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 2rem;
+        }
+        .callout h3 { color: var(--accent); font-size: 0.95rem; margin-bottom: 0.5rem; }
+        .callout p { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
+
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .toc h2 { color: var(--accent); font-size: 1.1rem; margin-bottom: 0.75rem; }
+        .toc ol { padding-left: 1.5rem; }
+        .toc li { margin-bottom: 0.4rem; }
+        .toc a { color: var(--accent); text-decoration: none; }
+        .toc a:hover { text-decoration: underline; }
+
+        section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+        h2 {
+            color: var(--accent);
+            font-size: 1.4rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--accent-light);
+        }
+        h3 { color: var(--text); font-size: 1.1rem; margin: 1.5rem 0 0.75rem; }
+
+        p { margin-bottom: 0.75rem; color: var(--text-muted); }
+        ul, ol { padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        li { margin-bottom: 0.4rem; color: var(--text-muted); }
+
+        code {
+            background: var(--surface-alt);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.85rem;
+            color: var(--green);
+        }
+        pre {
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            overflow-x: auto;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.82rem;
+            line-height: 1.6;
+            color: #e2e8f0;
+            margin: 0.75rem 0;
+        }
+        pre code { background: none; color: inherit; padding: 0; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.75rem 0;
+            font-size: 0.88rem;
+        }
+        th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); }
+        th { color: var(--accent); font-weight: 600; background: var(--surface-alt); }
+        td { color: var(--text-muted); }
+
+        .note {
+            background: var(--accent-light);
+            border-left: 4px solid var(--accent);
+            padding: 0.75rem 1rem;
+            border-radius: 0 6px 6px 0;
+            margin: 1rem 0;
+        }
+        .note p { margin: 0; color: var(--text); }
+
+        .warning {
+            background: var(--yellow-light);
+            border-left: 4px solid var(--yellow);
+            padding: 0.75rem 1rem;
+            border-radius: 0 6px 6px 0;
+            margin: 1rem 0;
+        }
+        .warning p { margin: 0; color: #92400e; }
+
+        .success {
+            background: var(--green-light);
+            border-left: 4px solid var(--green);
+            padding: 0.75rem 1rem;
+            border-radius: 0 6px 6px 0;
+            margin: 1rem 0;
+        }
+        .success p { margin: 0; color: var(--green); }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: var(--surface-alt);
+            border-radius: 8px;
+        }
+        .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px; height: 28px;
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            font-size: 0.8rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .step-content { flex: 1; }
+        .step-content strong { color: var(--text); }
+
+        .arch-diagram {
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 1.5rem;
+            font-family: 'Cascadia Code', monospace;
+            font-size: 0.78rem;
+            line-height: 1.6;
+            color: #e2e8f0;
+            white-space: pre;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Keycloak Authentication Setup</h1>
+        <p>Add OIDC login to the Licensing MCP agent host. Keycloak proves identity; the existing code handles authorization (roles, permissions, audit).</p>
+    </header>
+
+    <div class="container">
+        <div class="callout">
+            <h3>Authentication vs. Authorization — The Split</h3>
+            <p><strong>Keycloak handles authentication only</strong> — "Who are you?" Login, password verification, JWT with email.<br>
+            <strong>The existing MCP server handles authorization</strong> — <code>identity.py</code> resolves the email against <code>cs_users</code>, <code>cs_permissions</code> table maps roles to tools, <code>cs_executor.py</code> gates every write and logs audit. None of that changes.</p>
+        </div>
+
+        <nav class="toc">
+            <h2>Contents</h2>
+            <ol>
+                <li><a href="#prereqs">Prerequisites</a></li>
+                <li><a href="#docker">Part 1: Run Keycloak (Docker)</a></li>
+                <li><a href="#configure">Part 2: Configure Keycloak</a></li>
+                <li><a href="#test-keycloak">Part 3: Test the Setup</a></li>
+                <li><a href="#code-changes">Part 4: Code Changes to Agent Host</a></li>
+                <li><a href="#env-vars">Part 5: Environment Variables</a></li>
+                <li><a href="#e2e-test">Part 6: End-to-End Test</a></li>
+                <li><a href="#export">Part 7: Export Config for Peer</a></li>
+                <li><a href="#troubleshooting">Troubleshooting</a></li>
+            </ol>
+        </nav>
+
+        <!-- PREREQUISITES -->
+        <section id="prereqs">
+            <h2>Prerequisites</h2>
+            <ul>
+                <li>Docker Desktop installed and running</li>
+                <li>Python 3.13 with the project's venv activated</li>
+                <li>The Licensing MCP project working (13 tools verified)</li>
+                <li>Familiarity with <code>agent/app.py</code> and <code>agent/mcp_bridge.py</code></li>
+            </ul>
+        </section>
+
+        <!-- PART 1: DOCKER -->
+        <section id="docker">
+            <h2>Part 1: Run Keycloak Locally</h2>
+
+            <h3>1.1 Start Keycloak</h3>
+            <pre><code>docker run -d \
+  --name licensing-keycloak \
+  -p 127.0.0.1:8080:8080 \
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+  -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  quay.io/keycloak/keycloak start-dev</code></pre>
+
+            <p>Wait ~30 seconds. Access admin console: <strong>http://localhost:8080</strong></p>
+            <p>Login: <code>admin</code> / <code>admin</code></p>
+
+            <h3>1.2 Verify</h3>
+            <pre><code>curl http://localhost:8080/realms/master/.well-known/openid-configuration</code></pre>
+            <div class="success"><p>Should return JSON with issuer, authorization_endpoint, token_endpoint.</p></div>
+        </section>
+
+        <!-- PART 2: CONFIGURE -->
+        <section id="configure">
+            <h2>Part 2: Configure Keycloak</h2>
+
+            <p>Keycloak's only job: authenticate users and issue JWTs containing their email. The MCP server's database owns roles and permissions.</p>
+
+            <h3>2.1 Create a Realm</h3>
+            <ol>
+                <li>Click the realm dropdown in the top-left (says "master")</li>
+                <li>Click <strong>Create realm</strong></li>
+                <li>Realm name: <code>licensing-mcp</code></li>
+                <li>Click <strong>Create</strong></li>
+            </ol>
+
+            <h3>2.2 Create a Client (for the Agent Host)</h3>
+            <ol>
+                <li>Go to <strong>Clients</strong> &rarr; <strong>Create client</strong></li>
+                <li>Client type: OpenID Connect</li>
+                <li>Client ID: <code>licensing-agent</code></li>
+                <li>Click <strong>Next</strong></li>
+                <li>Client authentication: <strong>OFF</strong> (public client — browser initiates the flow)</li>
+                <li>Standard flow: <strong>Enabled</strong></li>
+                <li>Direct access grants: <strong>Enabled</strong> (useful for CLI testing)</li>
+                <li>Click <strong>Next</strong></li>
+                <li>Valid redirect URIs: <code>http://localhost:8100/callback</code></li>
+                <li>Valid post logout redirect URIs: <code>http://localhost:8100</code></li>
+                <li>Web origins: <code>http://localhost:8100</code></li>
+                <li>Click <strong>Save</strong></li>
+            </ol>
+
+            <h3>2.3 Create Test Users</h3>
+            <p>These must match the <code>cs_users</code> table in the SQLite database (already seeded).</p>
+            <p>Go to <strong>Users</strong> &rarr; <strong>Add user</strong> for each:</p>
+            <table>
+                <tr><th>Username</th><th>Email</th><th>Password</th></tr>
+                <tr><td><code>rep.sarah</code></td><td><code>rep.sarah@mathworks.com</code></td><td><code>password123</code></td></tr>
+                <tr><td><code>rep.mike</code></td><td><code>rep.mike@mathworks.com</code></td><td><code>password123</code></td></tr>
+                <tr><td><code>rep.director</code></td><td><code>rep.director@mathworks.com</code></td><td><code>password123</code></td></tr>
+            </table>
+
+            <p><strong>For each user:</strong></p>
+            <ol>
+                <li>Fill in Username, Email, First name, Last name</li>
+                <li>Email verified: <strong>ON</strong></li>
+                <li>Click <strong>Create</strong></li>
+                <li>Go to <strong>Credentials</strong> tab &rarr; <strong>Set password</strong> &rarr; <code>password123</code> &rarr; Temporary: <strong>OFF</strong> &rarr; Save</li>
+            </ol>
+
+            <div class="note"><p>No roles needed in Keycloak. The <code>cs_role_members</code> table in the database already maps these emails to CS-L1/L2/L3. Keycloak just proves they are who they claim to be.</p></div>
+
+            <h3>2.4 Ensure Email is in the Access Token</h3>
+            <ol>
+                <li>Go to <strong>Client scopes</strong> &rarr; click <strong>email</strong></li>
+                <li>Click <strong>Mappers</strong> tab &rarr; click the <strong>email</strong> mapper</li>
+                <li>Ensure <strong>Add to access token</strong> is <strong>ON</strong></li>
+                <li>Ensure <strong>Add to userinfo</strong> is <strong>ON</strong></li>
+                <li>Save</li>
+            </ol>
+
+            <div class="warning"><p>This is the critical step. The agent host extracts the <code>email</code> claim from the JWT and passes it as <code>CS_ACTOR_ID</code>. If this claim is missing, auth will fail.</p></div>
+        </section>
+
+        <!-- PART 3: TEST -->
+        <section id="test-keycloak">
+            <h2>Part 3: Test the Setup</h2>
+
+            <h3>3.1 Get a Token</h3>
+            <pre><code>curl -X POST http://localhost:8080/realms/licensing-mcp/protocol/openid-connect/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password" \
+  -d "client_id=licensing-agent" \
+  -d "username=rep.sarah@mathworks.com" \
+  -d "password=password123"</code></pre>
+
+            <div class="success"><p>Should return JSON with <code>access_token</code>, <code>refresh_token</code>, <code>expires_in</code>.</p></div>
+
+            <h3>3.2 Verify the Token Contains Email</h3>
+            <p>Copy the <code>access_token</code> value and decode it at <strong>https://jwt.io</strong>. Check:</p>
+            <ul>
+                <li><code>iss</code> = <code>http://localhost:8080/realms/licensing-mcp</code></li>
+                <li><code>email</code> = <code>rep.sarah@mathworks.com</code></li>
+            </ul>
+            <p>That's all we need. The email flows to the MCP server as <code>CS_ACTOR_ID</code>, and the existing <code>identity.py</code> + <code>cs_executor.py</code> handles the rest.</p>
+        </section>
+
+        <!-- PART 4: CODE CHANGES -->
+        <section id="code-changes">
+            <h2>Part 4: Code Changes to Agent Host</h2>
+
+            <div class="note"><p>All changes are in <code>agent/</code>. The MCP server (<code>licensing_mcp/</code>) does NOT change — it already reads <code>CS_ACTOR_ID</code> from env and handles authorization internally.</p></div>
+
+            <h3>4.1 New Dependencies</h3>
+            <p>Add to <code>requirements.txt</code>, then install:</p>
+            <pre><code>python-jose[cryptography]>=3.3.0
+httpx>=0.27.0</code></pre>
+            <pre><code>pip install "python-jose[cryptography]" httpx</code></pre>
+
+            <h3>4.2 New File: <code>agent/auth.py</code></h3>
+            <p>Single responsibility: fetch Keycloak's public keys, validate the JWT, return the email. Nothing else.</p>
+            <pre><code>"""
+Keycloak OIDC authentication — validates JWTs and extracts email.
+Authorization (roles, permissions) is handled by the MCP server's own code.
+"""
+from functools import lru_cache
+import httpx
+from jose import JWTError, jwt
+
+KEYCLOAK_URL = "http://localhost:8080"
+REALM = "licensing-mcp"
+CLIENT_ID = "licensing-agent"
+ISSUER = f"{KEYCLOAK_URL}/realms/{REALM}"
+JWKS_URL = f"{ISSUER}/protocol/openid-connect/certs"
+
+
+@lru_cache(maxsize=1)
+def get_jwks() -> dict:
+    response = httpx.get(JWKS_URL)
+    response.raise_for_status()
+    return response.json()
+
+
+def validate_token(token: str) -> dict:
+    try:
+        return jwt.decode(
+            token, get_jwks(), algorithms=["RS256"],
+            issuer=ISSUER, options={"verify_aud": False},
+        )
+    except JWTError as e:
+        raise ValueError(f"Token validation failed: {e}")
+
+
+def get_actor_email(token: str) -> str:
+    """Validate token and return email. This becomes CS_ACTOR_ID."""
+    claims = validate_token(token)
+    email = claims.get("email") or claims.get("preferred_username")
+    if not email:
+        raise ValueError("Token missing email claim — check Keycloak client scope mapper")
+    return email</code></pre>
+
+            <h3>4.3 Modify <code>agent/mcp_bridge.py</code></h3>
+            <p>Two small changes: accept <code>actor_email</code> in the constructor and use it in <code>start()</code>.</p>
+            <pre><code>class MCPBridge:
+    def __init__(self, actor_email: str) -> None:  # was: def __init__(self)
+        self._actor_email = actor_email
+        self._stack: AsyncExitStack | None = None
+        self.session: ClientSession | None = None
+        self.claude_tools: list[dict] = []
+
+    async def start(self) -> None:
+        params = StdioServerParameters(
+            command=str(_PROJECT_ROOT / ".venv" / "bin" / "python"),
+            args=["-m", "licensing_mcp"],
+            env={**os.environ, "CS_ACTOR_ID": self._actor_email},  # was: os.environ.get(...)
+        )</code></pre>
+
+            <h3>4.4 Rewrite <code>agent/app.py</code></h3>
+            <p>The global bridge and lifespan are replaced by per-session bridges. Three new in-memory stores, a session helper, and four new endpoints.</p>
+
+            <h4>New state + helpers</h4>
+            <pre><code># Three dicts replace the old single global bridge
+sessions: dict[str, list] = {}                # session_id → message history
+authenticated_sessions: dict[str, dict] = {}  # session_id → {email: ...}
+session_bridges: dict[str, MCPBridge] = {}    # session_id → MCPBridge
+
+async def _get_bridge(session_id: str) -> MCPBridge:
+    """Lazily start a per-session MCP subprocess on first tool call."""
+    if session_id not in session_bridges:
+        email = authenticated_sessions[session_id]["email"]
+        bridge = MCPBridge(actor_email=email)
+        await bridge.start()
+        session_bridges[session_id] = bridge
+    return session_bridges[session_id]
+
+def _session_id(request: Request) -> str | None:
+    """Return the session_id cookie if it maps to an authenticated session."""
+    sid = request.cookies.get("session_id")
+    return sid if sid and sid in authenticated_sessions else None
+
+# Lifespan: only cleanup on shutdown (no startup bridge)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    for bridge in session_bridges.values():
+        await bridge.stop()</code></pre>
+
+            <h4>/login — redirect to Keycloak</h4>
+            <pre><code>@app.get("/login")
+async def login():
+    auth_url = (
+        f"{ISSUER}/protocol/openid-connect/auth"
+        f"?client_id={CLIENT_ID}"
+        f"&response_type=code"
+        f"&redirect_uri=http://localhost:8100/callback"
+        f"&scope=openid email"
+        f"&prompt=login"  # always show login form — allows switching users
+    )
+    return RedirectResponse(auth_url)</code></pre>
+
+            <h4>/callback — exchange code for token, create session</h4>
+            <pre><code>@app.get("/callback")
+async def callback(code: str):
+    async with httpx.AsyncClient() as http:
+        resp = await http.post(
+            f"{ISSUER}/protocol/openid-connect/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": CLIENT_ID,
+                "code": code,
+                "redirect_uri": "http://localhost:8100/callback",
+            },
+        )
+    actor_email = get_actor_email(resp.json()["access_token"])
+    session_id = str(uuid.uuid4())
+    authenticated_sessions[session_id] = {"email": actor_email}
+    response = RedirectResponse("/")
+    response.set_cookie("session_id", session_id, httponly=True)
+    return response</code></pre>
+
+            <h4>/logout — clear session, redirect home</h4>
+            <div class="note"><p>Logout redirects to <code>/</code> (not Keycloak's end-session endpoint). The <code>&amp;prompt=login</code> on <code>/login</code> ensures Keycloak always asks for credentials, so switching users works correctly without needing the end-session redirect.</p></div>
+            <pre><code>@app.get("/logout")
+async def logout(request: Request):
+    session_id = request.cookies.get("session_id")
+    if session_id:
+        bridge = session_bridges.pop(session_id, None)
+        if bridge:
+            try:
+                await bridge.stop()
+            except Exception:
+                pass  # subprocess may have already exited
+        authenticated_sessions.pop(session_id, None)
+        sessions.pop(session_id, None)
+    response = RedirectResponse("/")
+    response.delete_cookie("session_id")
+    return response</code></pre>
+
+            <h4>Protected /api/chat and /api/chat/reset</h4>
+            <pre><code>class ChatRequest(BaseModel):
+    message: str  # session_id removed — session comes from cookie
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest, request: Request):
+    session_id = _session_id(request)
+    if not session_id:
+        return Response(status_code=401, content="Not authenticated")
+    messages = sessions.setdefault(session_id, [])
+    bridge = await _get_bridge(session_id)
+    messages.append({"role": "user", "content": req.message})
+    reply, tool_trace = await run_agent_turn(client, bridge, messages)
+    return {"reply": reply, "tool_calls": tool_trace}
+
+@app.post("/api/chat/reset")
+async def reset_chat(request: Request):
+    """Clear message history (New Chat button)."""
+    session_id = _session_id(request)
+    if session_id:
+        sessions[session_id] = []
+    return {"ok": True}</code></pre>
+
+            <h4>Protected /api/tools</h4>
+            <pre><code>@app.get("/api/tools")
+async def tools(request: Request):
+    session_id = _session_id(request)
+    if not session_id:
+        return Response(status_code=401, content="Not authenticated")
+    bridge = await _get_bridge(session_id)
+    return {
+        "actor": authenticated_sessions[session_id]["email"],
+        "tools": [...],
+    }</code></pre>
+
+            <h3>4.5 Update <code>agent/static/index.html</code></h3>
+            <p>Three UI additions. No framework needed — plain JS.</p>
+
+            <h4>Login overlay (shown when not authenticated)</h4>
+            <pre><code>&lt;!-- sits above everything; display:flex when 401 received --&gt;
+&lt;div id="loginOverlay"&gt;
+  &lt;div class="login-card"&gt;
+    &lt;div class="login-logo"&gt;L&lt;/div&gt;
+    &lt;h2&gt;Licensing Intelligence Agent&lt;/h2&gt;
+    &lt;p&gt;Sign in with your Keycloak account to continue.&lt;/p&gt;
+    &lt;a href="/login" class="login-btn"&gt;Sign in&lt;/a&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</code></pre>
+
+            <h4>User email + sign out in header</h4>
+            <pre><code>&lt;span id="userEmail"&gt;&lt;/span&gt;
+&lt;a href="/logout" id="signOut"&gt;Sign out&lt;/a&gt;</code></pre>
+
+            <h4>Auth check on load + New Chat wired to reset API</h4>
+            <pre><code>// On load: check auth via /api/tools
+fetch("/api/tools").then(r => {
+  if (r.status === 401) {
+    document.getElementById("loginOverlay").style.display = "flex";
+    return null;
+  }
+  return r.json();
+}).then(d => {
+  if (!d) return;
+  document.getElementById("userEmail").textContent = d.actor;
+  document.getElementById("status").innerHTML = `... ${d.tools.length} tools`;
+});
+
+// New Chat: clear server-side history + clear display
+document.getElementById("newChat").addEventListener("click", async () => {
+  await fetch("/api/chat/reset", { method: "POST" });
+  chat.innerHTML = "";
+  chat.appendChild(welcome);
+});</code></pre>
+
+            <h3>The Flow</h3>
+            <div class="arch-diagram">Browser
+  |  Click "Sign in" → GET /login
+  |  Redirected to Keycloak login page
+  |  User enters credentials
+  |  Keycloak redirects → GET /callback?code=...
+  |  Agent host exchanges code → JWT → extracts email
+  |  Sets httponly session cookie → redirects to /
+  v
+Agent Host (FastAPI, port 8100)
+  |  /api/tools 401 check → show login overlay if not authenticated
+  |  /api/chat: reads session cookie → gets bridge for session
+  |  Spawns MCP subprocess with CS_ACTOR_ID=email (lazy, on first message)
+  v
+MCP Server (subprocess, stdio)
+  |  identity.py: reads CS_ACTOR_ID → looks up cs_users → cs_role_members
+  |  cs_permissions: role → allowed tools
+  |  cs_executor.py: gate → mutate → audit → commit
+  v
+SQLite (owns ALL authorization decisions)</div>
+        </section>
+
+        <!-- PART 5: ENV VARS -->
+        <section id="env-vars">
+            <h2>Part 5: Environment Variables</h2>
+            <p>Create or update <code>.env</code> in the project root:</p>
+            <pre><code>ANTHROPIC_API_KEY=sk-ant-...
+
+# Keycloak values — must match your realm/client config
+KEYCLOAK_URL=http://localhost:8080
+KEYCLOAK_REALM=licensing-mcp
+KEYCLOAK_CLIENT_ID=licensing-agent</code></pre>
+            <div class="note"><p><code>CS_ACTOR_ID</code> is no longer needed in <code>.env</code> — it is now set per-session from the validated JWT, not from a static env var.</p></div>
+        </section>
+
+        <!-- PART 6: E2E TEST -->
+        <section id="e2e-test">
+            <h2>Part 6: End-to-End Test</h2>
+
+            <div class="step"><span class="step-num">1</span><div class="step-content"><strong>Start Keycloak:</strong> <code>docker start licensing-keycloak</code></div></div>
+            <div class="step"><span class="step-num">2</span><div class="step-content"><strong>Activate venv + start agent host:</strong><br><code>source .venv/bin/activate &amp;&amp; uvicorn agent.app:app --port 8100</code></div></div>
+            <div class="step"><span class="step-num">3</span><div class="step-content"><strong>Open browser:</strong> <code>http://localhost:8100</code> — you should see the <strong>login overlay</strong>, not the chat.</div></div>
+            <div class="step"><span class="step-num">4</span><div class="step-content"><strong>Click Sign in</strong> → redirected to Keycloak login page</div></div>
+            <div class="step"><span class="step-num">5</span><div class="step-content"><strong>Log in as:</strong> <code>rep.sarah@mathworks.com</code> / <code>password123</code></div></div>
+            <div class="step"><span class="step-num">6</span><div class="step-content"><strong>Redirected back to chat.</strong> Header shows <code>rep.sarah@mathworks.com</code>. Terminal shows: <em>MCP bridge up for rep.sarah@mathworks.com — 13 tools</em> (on first message).</div></div>
+            <div class="step"><span class="step-num">7</span><div class="step-content"><strong>Chat:</strong> "jane.doe@acmecorp.com can't activate Simulink" → agent diagnoses and resolves</div></div>
+            <div class="step"><span class="step-num">8</span><div class="step-content"><strong>Verify audit:</strong> Ask "show the audit history for L-99001" — actor should be <code>rep.sarah@mathworks.com</code></div></div>
+            <div class="step"><span class="step-num">9</span><div class="step-content"><strong>Sign out:</strong> Click Sign out in header → login overlay reappears at <code>http://localhost:8100</code></div></div>
+            <div class="step"><span class="step-num">10</span><div class="step-content"><strong>Switch user:</strong> Click Sign in → log in as <code>rep.director@mathworks.com</code> → confirm different email in header</div></div>
+
+            <h3>Test Role Gating (existing code — nothing to do with Keycloak)</h3>
+            <ol>
+                <li>Log in as <code>rep.sarah@mathworks.com</code> (CS-L1 in the database)</li>
+                <li>Ask: "Extend license L-99001 by 30 days" (requires CS-L3)</li>
+                <li>Should get permission denied from <code>cs_executor.py</code> — Keycloak has no role in this decision</li>
+            </ol>
+        </section>
+
+        <!-- PART 7: EXPORT -->
+        <section id="export">
+            <h2>Part 7: Export Config for Peer</h2>
+
+            <h3>Export the Realm</h3>
+            <pre><code>docker exec licensing-keycloak /opt/keycloak/bin/kc.sh export \
+  --dir /opt/keycloak/data/export \
+  --realm licensing-mcp \
+  --users realm_file
+
+docker cp licensing-keycloak:/opt/keycloak/data/export/licensing-mcp-realm.json \
+  ./keycloak/realm-export.json</code></pre>
+
+            <h3>Peer Imports in One Command</h3>
+            <pre><code>docker run -d \
+  --name licensing-keycloak \
+  -p 127.0.0.1:8080:8080 \
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+  -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  -v ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json \
+  quay.io/keycloak/keycloak start-dev --import-realm</code></pre>
+
+            <div class="success"><p>Imports the realm (client config + users) on first boot. Peer just needs Docker + this command — no manual Keycloak UI steps.</p></div>
+        </section>
+
+        <!-- TROUBLESHOOTING -->
+        <section id="troubleshooting">
+            <h2>Troubleshooting</h2>
+            <table>
+                <tr><th>Issue</th><th>Fix</th></tr>
+                <tr><td>Connection refused on port 8080</td><td><code>docker start licensing-keycloak</code></td></tr>
+                <tr><td>"Invalid signature" on token validation</td><td>Restart agent host (clears JWKS <code>lru_cache</code>). Keys may have rotated.</td></tr>
+                <tr><td>"Invalid redirect URI"</td><td>Keycloak client &rarr; Valid redirect URIs must exactly match <code>http://localhost:8100/callback</code></td></tr>
+                <tr><td>Token missing email claim</td><td>Client scopes &rarr; email &rarr; Mappers &rarr; "Add to access token" must be ON</td></tr>
+                <tr><td>MCP server says "not a registered CS user"</td><td>Email in Keycloak must exactly match <code>cs_users.email</code> in the SQLite DB</td></tr>
+                <tr><td>CORS errors</td><td>Keycloak client &rarr; Web origins must be <code>http://localhost:8100</code></td></tr>
+                <tr><td>Anthropic API 529 Overloaded error on first chat</td><td>Transient — retry. If persistent, change <code>MODEL</code> in <code>agent/agent_loop.py</code> from <code>claude-opus-4-8</code> to <code>claude-sonnet-4-6</code></td></tr>
+                <tr><td>500 error when clicking Sign out</td><td>Fixed: <code>/logout</code> wraps <code>bridge.stop()</code> in try/except and redirects to <code>/</code> directly (not Keycloak end-session)</td></tr>
+            </table>
+        </section>
+
+        <!-- ARCHITECTURE -->
+        <section>
+            <h2>Architecture Summary</h2>
+            <div class="arch-diagram">Browser
+  |  Login -> Keycloak (authentication)
+  |  Returns JWT with email claim
+  v
+Agent Host (FastAPI, port 8100)
+  |  Validates JWT signature (Keycloak JWKS)
+  |  Extracts email from token
+  |  Spawns MCP subprocess with CS_ACTOR_ID=email
+  v
+MCP Server (subprocess, stdio)
+  |  identity.py reads CS_ACTOR_ID
+  |  Looks up user in cs_users table
+  |  Looks up role in cs_role_members table
+  |  cs_permissions table: role -> allowed tools
+  |  cs_executor.py: gate -> mutate -> audit
+  v
+SQLite Database
+  (owns ALL authorization decisions)</div>
+
+            <div class="warning">
+                <p><strong>Clear boundary:</strong> Keycloak = "you are rep.sarah@mathworks.com" (authentication). The database = "rep.sarah is CS-L1 and can call revoke_activation" (authorization). These concerns never mix.</p>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

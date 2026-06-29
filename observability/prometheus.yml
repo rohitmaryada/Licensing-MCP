@@ -1,0 +1,50 @@
+# Prometheus scrape configuration for Licensing Intelligence MCP
+#
+# Key concepts demonstrated here:
+#   scrape_interval  — how often Prometheus pulls metrics (pull model)
+#   scrape_timeout   — how long to wait before declaring a scrape failed
+#   static_configs   — hardcoded targets (in production: use service discovery
+#                      via kubernetes_sd_configs or consul_sd_configs instead)
+#
+# Prometheus pull model vs push model:
+#   Pull: Prometheus controls the collection schedule. Services just expose /metrics.
+#         Easier to detect when a service goes down (scrape fails = target down).
+#   Push: Services send metrics to a gateway (Pushgateway, InfluxDB).
+#         Better for short-lived jobs that may finish before the next scrape.
+
+global:
+  scrape_interval: 15s        # default: pull every 15 seconds
+  evaluation_interval: 15s    # how often to evaluate alerting rules
+  scrape_timeout: 10s
+
+# Point Alertmanager at our local instance
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Load alerting rules
+rule_files:
+  - "/etc/prometheus/alerting_rules.yml"
+
+scrape_configs:
+
+  # Prometheus scrapes itself — useful for monitoring the monitor
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The licensing-mcp agent host
+  # host.docker.internal resolves to the Mac host from inside the Docker container
+  - job_name: "licensing-mcp-agent"
+    static_configs:
+      - targets: ["host.docker.internal:8100"]
+    metrics_path: "/metrics"
+    # Labels added to every time series from this job.
+    # In production, these come from Kubernetes pod labels via relabeling.
+    relabel_configs:
+      - target_label: "service"
+        replacement: "licensing-mcp-agent"
+      - target_label: "env"
+        replacement: "development"

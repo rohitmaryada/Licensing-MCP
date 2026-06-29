@@ -1,0 +1,52 @@
+# Alertmanager configuration
+#
+# Alertmanager sits between Prometheus (which fires alerts) and notification
+# channels (Slack, PagerDuty, email). Its job:
+#   1. Group related alerts so you get 1 Slack message, not 50
+#   2. Route alerts to the right receiver based on labels
+#   3. Inhibit low-priority alerts when a high-priority one is already firing
+#   4. Silence alerts during maintenance windows
+#
+# In production: replace the "null" receiver with real Slack/PagerDuty config.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Default: group all alerts and send to null receiver (log-only for POC)
+  receiver: "null"
+  group_by: ["alertname", "slo"]
+  group_wait: 30s          # wait 30s to batch alerts before sending first notification
+  group_interval: 5m       # how often to send updates for ongoing alerts
+  repeat_interval: 4h      # how often to re-notify if alert hasn't resolved
+
+  routes:
+    # Critical alerts would route to PagerDuty in production
+    - matchers:
+        - severity = "critical"
+      receiver: "null"   # swap for pagerduty in production
+      group_wait: 10s    # critical alerts get shorter group_wait
+
+receivers:
+  - name: "null"
+    # No-op receiver — alerts are visible in Alertmanager UI at localhost:9093
+    # In production, replace with:
+    #
+    # slack_configs:
+    #   - api_url: "https://hooks.slack.com/services/..."
+    #     channel: "#licensing-alerts"
+    #     title: "{{ .GroupLabels.alertname }}"
+    #     text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
+    #
+    # pagerduty_configs:
+    #   - routing_key: "<your-integration-key>"
+    #     severity: "{{ .CommonLabels.severity }}"
+
+inhibit_rules:
+  # If a critical alert is firing for the same SLO, suppress the warning.
+  # Prevents alert storms where both warning and critical fire simultaneously.
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ["slo"]

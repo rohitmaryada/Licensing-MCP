@@ -18,3 +18,10 @@ uvicorn>=0.40.0
 python-dotenv>=1.0.0
 python-jose[cryptography]>=3.3.0
 httpx>=0.27.0
+
+# Observability — OpenTelemetry SDK + Prometheus bridge
+# OTel SDK is the instrumentation API: write once, swap backends via exporters.
+# prometheus-client exposes the /metrics endpoint Prometheus scrapes (pull model).
+opentelemetry-sdk>=1.27.0
+opentelemetry-instrumentation-fastapi>=0.48b0
+prometheus-client>=0.21.0

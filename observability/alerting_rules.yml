@@ -1,0 +1,141 @@
+# SLO-based alerting rules for Licensing Intelligence MCP
+#
+# SLI (Service Level Indicator): a measurable property of a service
+#   Examples here: tool error rate, P95 latency, HTTP error rate
+#
+# SLO (Service Level Objective): the target value for an SLI
+#   Examples: error rate < 1%, P95 tool latency < 2s
+#
+# Error budget: how much SLO headroom remains in a window
+#   If the SLO is 99% success rate over 30 days, you have 1% * 43200 min = 432 min of errors.
+#   Error budget alerts fire when you're burning through budget too fast.
+#
+# The alerts below use a simple threshold approach (good for a POC).
+# In production: use multi-window burn rate alerts (Google SRE Workbook Chapter 5)
+# to catch both fast burns (page immediately) and slow burns (ticket/warning).
+
+groups:
+
+  - name: licensing-mcp-slo
+    interval: 30s   # evaluate these rules every 30 seconds
+
+    rules:
+
+      # ── Tool error rate SLO ────────────────────────────────────────────────
+      # SLI: fraction of tool calls that result in an error
+      # SLO: < 1% error rate over a 5-minute window
+      #
+      # PromQL breakdown:
+      #   rate(mcp_tool_calls_total{outcome="error"}[5m])  — error call rate
+      #   rate(mcp_tool_calls_total[5m])                   — total call rate
+      #   dividing gives the error fraction
+      #   > 0.01 fires when error rate exceeds 1%
+      - alert: HighToolErrorRate
+        expr: |
+          (
+            rate(mcp_tool_calls_total{outcome="error"}[5m])
+            /
+            rate(mcp_tool_calls_total[5m])
+          ) > 0.01
+        for: 2m    # must be true for 2 continuous minutes before firing
+        labels:
+          severity: warning
+          slo: tool_error_rate
+        annotations:
+          summary: "MCP tool error rate exceeding SLO"
+          description: >
+            Tool error rate is {{ $value | humanizePercentage }} over the last 5 minutes.
+            SLO target: < 1%. Burning error budget faster than expected.
+            Check tool_name label to identify which tool is failing.
+
+      # ── Per-tool error rate (more granular) ────────────────────────────────
+      - alert: ToolSpecificErrors
+        expr: |
+          (
+            rate(mcp_tool_calls_total{outcome="error"}[5m])
+            /
+            rate(mcp_tool_calls_total[5m])
+          ) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+          slo: tool_error_rate
+        annotations:
+          summary: "Tool {{ $labels.tool_name }} error rate above 5%"
+          description: >
+            {{ $labels.tool_name }} error rate: {{ $value | humanizePercentage }}.
+            A specific tool failing at >5% suggests a data or permission issue.
+
+      # ── Tool latency SLO ───────────────────────────────────────────────────
+      # SLI: P95 latency of MCP tool calls
+      # SLO: P95 < 2 seconds
+      #
+      # histogram_quantile(0.95, ...) computes the 95th percentile from buckets.
+      # The `rate()` around the bucket counter gives a rate over the window,
+      # which is necessary for accurate quantile estimation on a moving window.
+      - alert: SlowToolResponse
+        expr: |
+          histogram_quantile(
+            0.95,
+            rate(mcp_tool_duration_seconds_bucket[5m])
+          ) > 2.0
+        for: 2m
+        labels:
+          severity: warning
+          slo: tool_latency
+        annotations:
+          summary: "MCP tool P95 latency exceeding SLO"
+          description: >
+            P95 tool call latency is {{ $value }}s (SLO: < 2s).
+            The 95th percentile means 1 in 20 tool calls is slower than this.
+
+      # ── HTTP API latency SLO ───────────────────────────────────────────────
+      # SLI: P95 latency of /api/chat endpoint
+      # SLO: P95 < 10 seconds (includes Claude API round-trips, so budget is generous)
+      - alert: SlowAgentResponse
+        expr: |
+          histogram_quantile(
+            0.95,
+            rate(http_request_duration_seconds_bucket{endpoint="/api/chat"}[5m])
+          ) > 10.0
+        for: 3m
+        labels:
+          severity: warning
+          slo: api_latency
+        annotations:
+          summary: "Agent /api/chat P95 latency exceeding SLO"
+          description: >
+            P95 /api/chat latency is {{ $value }}s (SLO: < 10s).
+            Agent loops with many tool calls will push latency higher.
+
+      # ── HTTP error rate SLO ────────────────────────────────────────────────
+      - alert: HighHttpErrorRate
+        expr: |
+          (
+            rate(http_requests_total{status=~"5.."}[5m])
+            /
+            rate(http_requests_total[5m])
+          ) > 0.02
+        for: 2m
+        labels:
+          severity: warning
+          slo: http_error_rate
+        annotations:
+          summary: "Agent HTTP 5xx error rate above SLO"
+          description: >
+            HTTP 5xx rate: {{ $value | humanizePercentage }} (SLO: < 2%).
+            Check application logs for unhandled exceptions.
+
+      # ── Agent loop runaway detector ────────────────────────────────────────
+      # If the agent hits MAX_LOOPS (15), something went wrong.
+      # This isn't an SLO but an operational signal worth alerting on.
+      - alert: AgentMaxLoopsHit
+        expr: rate(agent_turns_total{outcome="max_loops_hit"}[15m]) > 0
+        for: 0m    # fire immediately — this should never happen in normal operation
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent turn hit MAX_LOOPS circuit breaker"
+          description: >
+            An agent turn exceeded the 15-iteration circuit breaker.
+            The user received a degraded response. Check for prompt or tool design issues.

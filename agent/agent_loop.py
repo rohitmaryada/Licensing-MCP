@@ -26,6 +26,7 @@ Design notes (the things that bite people):
 import anthropic
 
 from agent.mcp_bridge import MCPBridge
+from agent.observability import AGENT_LOOP_ITERATIONS, AGENT_TURNS
 
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 16000
@@ -67,6 +68,7 @@ async def run_agent_turn(
     tool_trace: list[dict] = []
 
     for _ in range(MAX_LOOPS):
+        AGENT_LOOP_ITERATIONS.inc()
         response = await client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
@@ -85,6 +87,7 @@ async def run_agent_turn(
             final_text = "".join(
                 b.text for b in response.content if b.type == "text"
             )
+            AGENT_TURNS.labels(outcome="success").inc()
             return final_text, tool_trace
 
         # Execute every tool call in this response, then send all results
@@ -115,6 +118,7 @@ async def run_agent_turn(
 
         messages.append({"role": "user", "content": tool_results})
 
+    AGENT_TURNS.labels(outcome="max_loops_hit").inc()
     return (
         "I hit the maximum number of tool-call rounds for one turn. "
         "Please rephrase or break the request into smaller steps.",

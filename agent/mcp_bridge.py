@@ -17,11 +17,13 @@ One field rename. That symmetry IS the point of MCP.
 """
 
 import os
+import time
 from contextlib import AsyncExitStack
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from agent.observability import MCP_TOOL_CALLS, MCP_TOOL_DURATION
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -71,12 +73,32 @@ class MCPBridge:
         """
         Execute one tool call against the MCP server and return its text
         payload — which becomes the content of a tool_result block.
+
+        Instrumentation note: this is the single chokepoint for all 13 tools,
+        so one counter + one histogram here covers the entire tool surface.
+        The `tool_name` label lets us slice per tool in Grafana without
+        duplicating instrumentation in every tool file.
         """
         if not self.session:
             raise RuntimeError("MCPBridge not started")
-        result = await self.session.call_tool(name, arguments)
-        parts = [c.text for c in result.content if c.type == "text"]
-        return "\n".join(parts) if parts else "(empty result)"
+
+        start = time.perf_counter()
+        outcome = "success"
+        try:
+            result = await self.session.call_tool(name, arguments)
+            parts = [c.text for c in result.content if c.type == "text"]
+            return "\n".join(parts) if parts else "(empty result)"
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            # Always record — even on error — so error rate queries work correctly.
+            # rate(mcp_tool_calls_total{outcome="error"}[5m])
+            #   / rate(mcp_tool_calls_total[5m])
+            # gives the error rate per tool.
+            elapsed = time.perf_counter() - start
+            MCP_TOOL_CALLS.labels(tool_name=name, outcome=outcome).inc()
+            MCP_TOOL_DURATION.labels(tool_name=name).observe(elapsed)
 
     async def stop(self) -> None:
         if self._stack:

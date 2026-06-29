@@ -1,0 +1,228 @@
+{
+  "title": "Licensing Intelligence MCP",
+  "uid": "licensing-mcp-v1",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "tags": ["licensing", "mcp", "observability"],
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "rate(http_requests_total[1m])",
+        "legendFormat": "{{method}} {{endpoint}} {{status}}",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" } }
+    },
+
+    {
+      "id": 2,
+      "title": "HTTP 5xx Error Rate",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+    },
+
+    {
+      "id": 3,
+      "title": "HTTP P95 Latency",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+    },
+
+    {
+      "id": 4,
+      "title": "Active Sessions",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "agent_sessions_active",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" }
+    },
+
+    {
+      "id": 5,
+      "title": "HTTP P95 Latency by Endpoint",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(http_request_duration_seconds_bucket[5m])))",
+        "legendFormat": "p95 {{endpoint}}",
+        "refId": "A"
+      }, {
+        "expr": "histogram_quantile(0.50, sum by (le, endpoint) (rate(http_request_duration_seconds_bucket[5m])))",
+        "legendFormat": "p50 {{endpoint}}",
+        "refId": "B"
+      }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    {
+      "id": 6,
+      "title": "MCP Tool Calls per Second",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "rate(mcp_tool_calls_total{outcome=\"success\"}[1m])",
+        "legendFormat": "✓ {{tool_name}}",
+        "refId": "A"
+      }, {
+        "expr": "rate(mcp_tool_calls_total{outcome=\"error\"}[1m])",
+        "legendFormat": "✗ {{tool_name}}",
+        "refId": "B"
+      }],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": [{
+          "matcher": { "id": "byRegexp", "options": "✗.*" },
+          "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+        }]
+      }
+    },
+
+    {
+      "id": 7,
+      "title": "Tool Call Error Rate by Tool",
+      "type": "bargauge",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "sum by (tool_name) (rate(mcp_tool_calls_total{outcome=\"error\"}[5m])) / sum by (tool_name) (rate(mcp_tool_calls_total[5m]))",
+        "legendFormat": "{{tool_name}}",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          },
+          "min": 0,
+          "max": 0.1
+        }
+      },
+      "options": { "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+
+    {
+      "id": 8,
+      "title": "Tool P95 Latency by Tool",
+      "type": "bargauge",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (le, tool_name) (rate(mcp_tool_duration_seconds_bucket[5m])))",
+        "legendFormat": "{{tool_name}}",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "red", "value": 2.0 }
+            ]
+          }
+        }
+      },
+      "options": { "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+
+    {
+      "id": 9,
+      "title": "Agent Loop Iterations/sec",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "description": "Each iteration = one Claude API round-trip. Higher = agent is doing more tool calls per user turn. Spikes may indicate complex queries or runaway loops.",
+      "targets": [{
+        "expr": "rate(agent_loop_iterations_total[1m])",
+        "legendFormat": "iterations/s",
+        "refId": "A"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    {
+      "id": 10,
+      "title": "Turns by Outcome",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
+      "description": "max_loops_hit means an agent turn was terminated by the circuit breaker — the user got a degraded response.",
+      "targets": [{
+        "expr": "rate(agent_turns_total[5m])",
+        "legendFormat": "{{outcome}}",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": [{
+          "matcher": { "id": "byName", "options": "max_loops_hit" },
+          "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+        }]
+      }
+    }
+
+  ]
+}

@@ -1,0 +1,81 @@
+# Tasks — Scale, Real Data & Microservices
+
+Work breakdown for the [scale & services strategy](docs/scale-and-services-strategy.md).
+Two-person swarm: **P1** and **P2**. Sizes: S ≈ ½–1 day, M ≈ 1–3 days, L ≈ 3–5 days.
+
+## Swarm strategy
+
+Lock two shared **contracts** first — together — then the workstreams run in
+parallel with almost no cross-blocking:
+
+1. **Schema** (deep-hierarchy data model) — Data *and* Services depend on it.
+2. **Service API contracts** — Services *and* the MCP repoint depend on them;
+   the repoint can start against **mocks** before the real services exist.
+
+Suggested ownership (swappable): **P1 = Data**, **P2 = Services**. MCP repoint is
+shared/whoever's free; Verify is joint.
+
+---
+
+## Foundation — do jointly, first (unblocks everything)
+
+- [ ] **T0 · Provision Neon** — project, DB, pooled connection string → secrets; confirm storage tier for ~10M rows · _S · owner: either_
+- [ ] **T1 · Finalize deep-hierarchy schema** — resolve open Qs (entitlement↔product single-vs-suite; policy fields). Output: ERD + DDL · _M · joint (P1 leads)_
+- [ ] **T2 · Define service API contracts** — OpenAPI/endpoint list + DTOs + pagination + error shapes for the 3 services · _M · joint_
+
+---
+
+## Workstream A — Data (P1)
+
+- [ ] **A1 · DDL + migrations on Neon** (from T1) · _S/M_ · dep: T0, T1
+- [ ] **A2 · Bulk deterministic generator** — Postgres `COPY`, ~10M rows at target proportions · _L (long pole)_ · dep: T1
+- [ ] **A3 · Plant demo + golden records** — Acme / jane.doe scenario inside the dataset · _S_ · dep: A2
+- [ ] **A4 · Load + validate** — row counts, FK integrity, query spot-checks + reset script · _S_ · dep: A2
+
+## Workstream B — Services (P2)
+
+- [ ] **B1 · Service scaffolding** — layout for 3 services, shared DB/pool module, health checks, `docker-compose` landscape · _M_ · dep: T2
+- [ ] **B2 · Licensing service** — read + write endpoints · _M/L_ · dep: B1, A1
+- [ ] **B3 · Entitlement service** — endpoints · _M_ · dep: B1, A1
+- [ ] **B4 · Activation service** — endpoints (revoke/reset writes) · _M_ · dep: B1, A1
+- [ ] **B5 · Service-to-service auth** — token issuance + validation · _M_ · dep: B1
+
+## Workstream C — MCP repoint (either; start on mocks after T2)
+
+- [ ] **C1 · `data_access/` → httpx clients** against the contracts (mock server first, then real services) · _M_ · dep: T2
+- [ ] **C2 · Wire service-auth token** onto outbound calls (Boundary 2) · _S_ · dep: C1, B5
+- [ ] **C3 · Env-driven service URLs + local-dev fallback** · _S_ · dep: C1
+
+## Workstream D — Verify (joint, at the end)
+
+- [ ] **D1 · Story 1 + Story 2 end-to-end** through the new stack · _S_ · dep: A*, B*, C*
+- [ ] **D2 · Latency/scale check** at ~10M rows + demo warm-up story · _M_ · dep: D1
+- [ ] **D3 · Docs** — README + security doc updated to the 3-tier architecture · _S_ · dep: D1
+
+---
+
+## Critical path
+
+```
+T0 ─┐
+T1 ─┼─► A1 ─► A2 (long pole) ─► A3 ─► A4 ─┐
+T2 ─┘        B1 ─► B2/B3/B4 ─► B5 ────────┼─► D1 ─► D2 ─► D3
+             C1 (on mocks) ─► C2/C3 ──────┘
+```
+
+The two long poles — **A2** (data generator) and **B2–B4** (services) — run fully
+in parallel because T1/T2 decoupled them. C1 overlaps both via mocks. D is the join.
+
+## Out of this cut (later)
+
+- Audit service (strategy §5 open question)
+- Compliance hooks — Phase 5, see `compliance/PRD.md`
+- CI pipeline
+
+## Open questions to resolve during T1/T2
+
+1. Entitlement ↔ product mapping (single vs suite) and `policy` attributes.
+2. Audit as its own service vs per-service.
+3. Neon storage tier for ~10M rows (free vs low-cost paid).
+4. Hosted demo: services local via compose vs deployed to a free host.
+5. Representative row proportions — tune to real enterprise ratios.

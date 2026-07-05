@@ -20,7 +20,7 @@ shared/whoever's free; Verify is joint.
 ## Foundation — do jointly, first (unblocks everything)
 
 - [ ] **T0 · Provision Neon** — project, DB, pooled connection string → secrets; confirm storage tier for ~10M rows · _S · owner: either_
-- [ ] **T1 · Finalize deep-hierarchy schema** — resolve open Qs (entitlement↔product single-vs-suite; policy fields). Output: ERD + DDL · _M · joint (P1 leads)_
+- [x] **T1 · Finalize deep-hierarchy schema** — resolve open Qs (entitlement↔product single-vs-suite; policy fields). Output: ERD + DDL · _M · joint (P1 leads)_ → **DONE (v2, reconciled against real MW specs):** [db/schema.sql](db/schema.sql) (validated on PG16: 13 tables / 21 FKs / 45 indexes) + [db/SCHEMA.md](db/SCHEMA.md) §8. Decisions: entitlement **license-scoped** (confirmed by MW `Entitlement.licenseId`); `policy` 1:1; suites fan out via `product_suite_component` (POC abstraction). v2 added `entitlement_person` (assignment≠usage), master-scoped admins, denormalized `master_license_id`, nullable `license_product.license_id` (unallocated products), `entitlement_type`/`activation_type`.
 - [ ] **T2 · Define service API contracts** — OpenAPI/endpoint list + DTOs + pagination + error shapes for the 3 services · _M · joint_
 
 ---
@@ -74,7 +74,7 @@ in parallel because T1/T2 decoupled them. C1 overlaps both via mocks. D is the j
 
 ## Open questions to resolve during T1/T2
 
-1. Entitlement ↔ product mapping (single vs suite) and `policy` attributes.
+1. ~~Entitlement ↔ product mapping (single vs suite) and `policy` attributes.~~ **RESOLVED in T1** — entitlement license-scoped; suites fan out; policy 1:1 (see db/SCHEMA.md §2).
 2. Audit as its own service vs per-service.
 3. Neon storage tier for ~10M rows (free vs low-cost paid).
 4. Hosted demo: services local via compose vs deployed to a free host.

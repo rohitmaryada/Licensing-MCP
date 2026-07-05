@@ -1,0 +1,235 @@
+-- =============================================================================
+-- Deep-hierarchy licensing schema  (T1, scale-and-services strategy Phase 1)
+-- Target: Neon Postgres. ~10M representative rows.
+-- Owned by the domain services (Licensing / Entitlement / Activation) — the MCP
+-- server never touches this DB directly; it calls the services over HTTP.
+--
+-- Design notes + ERD + MW-fidelity mapping: see db/SCHEMA.md
+--
+-- v2 — reconciled against the real MW service specs (MasterLicenseWS REST +
+-- EntitlementWS GraphQL). Changes vs v1:
+--   * entitlement_person (NEW) — the real EntitlementPerson assignment join
+--     (who holds an entitlement), distinct from machine-level activation.
+--   * administrators moved to MASTER-LICENSE scope (master_license_admin) —
+--     MW exposes administrators[] on MasterLicense, not on license.
+--   * master_license_id denormalized onto license_product + entitlement, as MW
+--     carries it (matches the Entitlement service's masterLicenseId filter).
+--   * license_product.license_id now NULLABLE — supports MW "unallocatedProducts"
+--     (products held at master level, not yet assigned to a license).
+--   * entitlement gains entitlement_type + activation_type; status enum widened
+--     to the MW set. policy_type folded into entitlement.activation_type.
+--
+-- Conventions:
+--   * BIGINT surrogate PKs everywhere (compact FKs, fast COPY load at scale).
+--   * Human-facing refs (L-99001, ML-99000) kept as UNIQUE text (POC convenience;
+--     MW uses bare integer ids externally).
+--   * Native ENUM types for closed value sets.
+--   * Every foreign-key access path is indexed (services do key-scoped or
+--     bounded lookups only — never unbounded scans at 10M rows).
+--   * Tables declared in dependency order (Postgres needs an FK target to exist
+--     when the FK is declared).
+-- =============================================================================
+
+BEGIN;
+
+-- ── Enum types ───────────────────────────────────────────────────────────────
+CREATE TYPE entity_type        AS ENUM ('enterprise', 'academic', 'individual', 'government');
+CREATE TYPE license_status      AS ENUM ('active', 'expired', 'trial', 'suspended');
+CREATE TYPE membership_status   AS ENUM ('active', 'inactive');
+-- MW EntitlementStatusType: ACTIVE, INACTIVE, HOLD, REVIEW, OBSOLETE, EXPIRED
+CREATE TYPE entitlement_status  AS ENUM ('active', 'inactive', 'hold', 'review', 'obsolete', 'expired');
+-- MW EntitlementType: LICENSE | TSUR  (POC generates LICENSE only)
+CREATE TYPE entitlement_type    AS ENUM ('license', 'tsur');
+-- MW ActivationType (lives on the entitlement in MW)
+CREATE TYPE activation_type     AS ENUM ('designated_computer', 'standalone_named_user',
+                                         'concurrent', 'network_named_user',
+                                         'not_applicable', 'unset');
+CREATE TYPE activation_status   AS ENUM ('active', 'inactive');
+
+-- ── Reference: product catalog ───────────────────────────────────────────────
+-- Atomic parts (MATLAB 'ML', Simulink 'SL', ...) AND suite offerings. NOTE:
+-- product_suite_component is a POC abstraction for suite fan-out; MW resolves
+-- suites via businessOfferingId/configurator rather than an explicit table.
+CREATE TABLE product (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    product_code  TEXT NOT NULL UNIQUE,           -- MW productCode / baseCode, e.g. 'SL','ML','CWS'
+    name          TEXT NOT NULL,
+    category      TEXT,
+    is_suite      BOOLEAN NOT NULL DEFAULT FALSE,
+    base_price    NUMERIC(12,2)
+);
+
+CREATE TABLE product_suite_component (
+    suite_product_id      BIGINT NOT NULL REFERENCES product(id),
+    component_product_id  BIGINT NOT NULL REFERENCES product(id),
+    PRIMARY KEY (suite_product_id, component_product_id),
+    CHECK (suite_product_id <> component_product_id)
+);
+CREATE INDEX ix_suite_component_component ON product_suite_component (component_product_id);
+
+-- ── Tier 1: customer entity ──────────────────────────────────────────────────
+-- POC stand-in for MW's Licensee → CDS account/contact (entityId + entityType).
+-- In prod this is owned by CDS, not the licensing service.
+CREATE TABLE entity (
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name         TEXT NOT NULL,
+    entity_type  entity_type NOT NULL,
+    industry     TEXT,
+    country      TEXT,
+    region       TEXT,
+    external_ref TEXT,                            -- CDS entityId
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_entity_name ON entity (name);     -- bounded name search (upgrade to trigram later)
+
+-- ── People: end users (declared early — later tables reference it) ───────────
+-- 'app_user' (not 'user' — a Postgres reserved word). MW keys people by
+-- webProfileId; email is our lookup handle.
+CREATE TABLE app_user (
+    id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    web_profile_id BIGINT UNIQUE,                 -- MW webProfileId
+    email          TEXT NOT NULL UNIQUE,
+    first_name     TEXT NOT NULL,
+    last_name      TEXT NOT NULL,
+    entity_id      BIGINT NOT NULL REFERENCES entity(id),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_app_user_entity ON app_user (entity_id);
+
+-- ── Tier 2: master license — umbrella per customer ───────────────────────────
+CREATE TABLE master_license (
+    id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    master_license_ref TEXT NOT NULL UNIQUE,       -- 'ML-XXXXX'
+    entity_id          BIGINT NOT NULL REFERENCES entity(id),
+    label              TEXT,                        -- MW MasterLicense.label
+    program            TEXT,                        -- MW program / sponsor headers
+    sponsor            TEXT,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_master_license_entity ON master_license (entity_id);
+
+-- ── Tier 3: license ──────────────────────────────────────────────────────────
+CREATE TABLE license (
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    license_ref       TEXT NOT NULL UNIQUE,        -- 'L-XXXXX' (e.g. L-99001)
+    master_license_id BIGINT NOT NULL REFERENCES master_license(id),
+    status            license_status NOT NULL DEFAULT 'active',
+    start_date        DATE NOT NULL,
+    expiry_date       DATE NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_license_master ON license (master_license_id);
+
+-- ── Tier 4a: licensed product (sellable offering + seats) ────────────────────
+-- master_license_id denormalized (MW carries it on LicensedProduct).
+-- license_id NULLABLE → MW "unallocatedProducts": an offering held at master
+-- level, not yet assigned to a license.
+CREATE TABLE license_product (
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    master_license_id BIGINT NOT NULL REFERENCES master_license(id),
+    license_id        BIGINT REFERENCES license(id),          -- NULL = unallocated
+    product_id        BIGINT NOT NULL REFERENCES product(id), -- the offering (may be a suite)
+    seat_count        INTEGER NOT NULL CHECK (seat_count >= 0),  -- MW quantity
+    business_offering_id BIGINT,                               -- MW businessOfferingId
+    UNIQUE (license_id, product_id)   -- NULL license_id → multiple unallocated allowed
+);
+CREATE INDEX ix_license_product_master  ON license_product (master_license_id);
+CREATE INDEX ix_license_product_license ON license_product (license_id);
+CREATE INDEX ix_license_product_product ON license_product (product_id);
+
+-- ── Tier 4b: entitlement (LICENSE-scoped, first-class) ───────────────────────
+-- Anchored to a license (+ denormalized master_license_id), per MW
+-- Entitlement.licenseId/masterLicenseId. NOT user-owned — assignment lives in
+-- entitlement_person, machine usage in activation.
+CREATE TABLE entitlement (
+    id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    license_id         BIGINT NOT NULL REFERENCES license(id),
+    master_license_id  BIGINT NOT NULL REFERENCES master_license(id),   -- denormalized (MW)
+    license_product_id BIGINT NOT NULL REFERENCES license_product(id),  -- the offering it came from
+    product_id         BIGINT NOT NULL REFERENCES product(id),          -- the atomic product granted
+    entitlement_type   entitlement_type NOT NULL DEFAULT 'license',
+    activation_type    activation_type  NOT NULL DEFAULT 'standalone_named_user',
+    status             entitlement_status NOT NULL DEFAULT 'active',
+    label              TEXT,
+    granted_at         DATE NOT NULL,
+    UNIQUE (license_product_id, product_id)
+);
+CREATE INDEX ix_entitlement_license ON entitlement (license_id);
+CREATE INDEX ix_entitlement_master  ON entitlement (master_license_id);
+CREATE INDEX ix_entitlement_product ON entitlement (product_id);
+
+-- ── Tier 5: policy (1:1 with entitlement) — governs usage ────────────────────
+-- MW EntitlementPolicy = policyName + quantity + policyRuleValue[] (a generic
+-- ruleName/ruleValue bag). We keep MW's policy_name + quantity and model the
+-- specific rules that drive the POC as explicit columns (simpler than the bag;
+-- divergence documented in SCHEMA.md §MW-fidelity).
+CREATE TABLE policy (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    entitlement_id      BIGINT NOT NULL UNIQUE REFERENCES entitlement(id),
+    policy_name         TEXT,                        -- MW policyName
+    quantity            INTEGER,                     -- MW policy quantity (seat/key)
+    max_activations     INTEGER NOT NULL CHECK (max_activations >= 0),  -- per user (named) / total (concurrent)
+    activation_ttl_days INTEGER NOT NULL,            -- heartbeat staleness window (powers stale-activation)
+    allow_offline       BOOLEAN NOT NULL DEFAULT FALSE,
+    reactivation_limit  INTEGER NOT NULL DEFAULT 0    -- install-reset budget
+);
+
+-- ── EntitlementPerson: who is assigned to an entitlement (MW join) ───────────
+-- Assignment ≠ usage. jane.doe "has the Simulink entitlement" = a row here;
+-- her activation on MAC-OLD-7291 = a row in activation.
+CREATE TABLE entitlement_person (
+    id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    entitlement_id BIGINT NOT NULL REFERENCES entitlement(id),
+    user_id        BIGINT NOT NULL REFERENCES app_user(id),
+    role           TEXT,                             -- MW EntitlementPerson.role
+    added_date     DATE NOT NULL,
+    status         membership_status NOT NULL DEFAULT 'active',
+    UNIQUE (entitlement_id, user_id)
+);
+CREATE INDEX ix_ent_person_entitlement ON entitlement_person (entitlement_id);
+CREATE INDEX ix_ent_person_user        ON entitlement_person (user_id);  -- check_user_entitlements path
+
+-- ── Tier 6: activation (machine-level use) ───────────────────────────────────
+-- Not covered by the two specs read (belongs to the activation/LicenseUse
+-- service). Modeled as entitlement × user × machine × heartbeat.
+CREATE TABLE activation (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    entitlement_id  BIGINT NOT NULL REFERENCES entitlement(id),
+    user_id         BIGINT NOT NULL REFERENCES app_user(id),
+    machine_id      TEXT NOT NULL,
+    machine_name    TEXT,
+    os              TEXT,
+    activation_date DATE NOT NULL,
+    last_heartbeat  TIMESTAMPTZ NOT NULL,
+    status          activation_status NOT NULL DEFAULT 'active',
+    UNIQUE (entitlement_id, user_id, machine_id)
+);
+CREATE INDEX ix_activation_entitlement ON activation (entitlement_id);
+CREATE INDEX ix_activation_user        ON activation (user_id);
+CREATE INDEX ix_activation_user_status ON activation (user_id, status);
+
+-- ── Licensed end users: seat membership at LICENSE level ─────────────────────
+CREATE TABLE license_end_user (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    license_id BIGINT NOT NULL REFERENCES license(id),
+    user_id    BIGINT NOT NULL REFERENCES app_user(id),
+    added_date DATE NOT NULL,
+    status     membership_status NOT NULL DEFAULT 'active',
+    UNIQUE (license_id, user_id)
+);
+CREATE INDEX ix_license_end_user_license ON license_end_user (license_id);
+CREATE INDEX ix_license_end_user_user    ON license_end_user (user_id);
+
+-- ── Administrators: at MASTER-LICENSE scope (MW) ─────────────────────────────
+CREATE TABLE master_license_admin (
+    id                    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    master_license_id     BIGINT NOT NULL REFERENCES master_license(id),
+    user_id               BIGINT NOT NULL REFERENCES app_user(id),
+    renewal_notifications BOOLEAN NOT NULL DEFAULT FALSE,  -- MW renewalNotifications
+    added_date            DATE NOT NULL,
+    UNIQUE (master_license_id, user_id)
+);
+CREATE INDEX ix_ml_admin_master ON master_license_admin (master_license_id);
+CREATE INDEX ix_ml_admin_user   ON master_license_admin (user_id);
+
+COMMIT;

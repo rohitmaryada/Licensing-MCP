@@ -21,7 +21,7 @@ shared/whoever's free; Verify is joint.
 
 - [ ] **T0 · Provision Neon** — project, DB, pooled connection string → secrets. **Free tier is fine** (default dataset ~1.5M rows / 266 MB). Meanwhile local dev runs on `db/docker-compose.yml` (persistent Postgres, $0) · _S · owner: either_
 - [x] **T1 · Finalize deep-hierarchy schema** — resolve open Qs (entitlement↔product single-vs-suite; policy fields). Output: ERD + DDL · _M · joint (P1 leads)_ → **DONE (v2, reconciled against real MW specs):** [db/schema.sql](db/schema.sql) (validated on PG16: 13 tables / 21 FKs / 45 indexes) + [db/SCHEMA.md](db/SCHEMA.md) §8. Decisions: entitlement **license-scoped** (confirmed by MW `Entitlement.licenseId`); `policy` 1:1; suites fan out via `product_suite_component` (POC abstraction). v2 added `entitlement_person` (assignment≠usage), master-scoped admins, denormalized `master_license_id`, nullable `license_product.license_id` (unallocated products), `entitlement_type`/`activation_type`.
-- [ ] **T2 · Define service API contracts** — OpenAPI/endpoint list + DTOs + pagination + error shapes for the 3 services · _M · joint_
+- [x] **T2 · Define service API contracts** — OpenAPI/endpoint list + DTOs + pagination + error shapes for the 3 services · _M · joint_ → **DONE:** [services/CONTRACTS.md](services/CONTRACTS.md). All 3 services (Licensing/Entitlement/Activation), read + write; auth headers, pagination, error shapes mirror the real MW specs; MCP tool→endpoint map for C1. **This unblocks B1–B4 and C1 (on mocks).**
 
 ---
 
@@ -33,6 +33,18 @@ shared/whoever's free; Verify is joint.
 - [ ] **A4 · Load + validate** — row counts, FK integrity, query spot-checks + reset script · _S_ · dep: A2
 
 ## Workstream B — Services (P2)
+
+> **▶ Getting started (run the DB locally — no cloud, no cost):**
+> The data foundation (T1 schema + A2 generator) is merged to `main`.
+> ```bash
+> cd db && docker compose up -d          # persistent local Postgres on :5433
+> LICENSING_PG_URL=postgresql://licensing:licensing@localhost:5433/licensing \
+>   .venv/bin/python scripts/generate_bulk.py --reset --verify   # ~1.5M rows
+> docker compose exec db psql -U licensing -d licensing          # explore
+> ```
+> - **Schema your services own:** [db/schema.sql](db/schema.sql) · ERD + MW-fidelity mapping: [db/SCHEMA.md](db/SCHEMA.md)
+> - **Service→table ownership + endpoint sketch:** [strategy §5](docs/scale-and-services-strategy.md)
+> - **Blocked on T2** (service contracts) before B1 — pin the endpoints/DTOs first.
 
 - [ ] **B1 · Service scaffolding** — layout for 3 services, shared DB/pool module, health checks, `docker-compose` landscape · _M_ · dep: T2
 - [ ] **B2 · Licensing service** — read + write endpoints · _M/L_ · dep: B1, A1

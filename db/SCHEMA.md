@@ -1,0 +1,289 @@
+# Deep-Hierarchy Schema — Design & ERD (T1)
+
+> Delivers **T1** from [../TASKS.md](../TASKS.md): the deep-hierarchy data model
+> that Data (generator) and Services both depend on.
+> DDL: [schema.sql](schema.sql) · **v2**, validated on Postgres 16 (13 tables, 21 FKs, 45 indexes).
+> Strategy: [../docs/scale-and-services-strategy.md](../docs/scale-and-services-strategy.md) §4–6.
+> Last updated: 2026-07-06 · **v2 reconciled against the real MW specs — see §9.**
+
+---
+
+## 1. What this is (and what it replaces)
+
+The POC's live model (`licensing_mcp/models.py`, SQLite) is **flat**: `entity →
+license → {products, users, denormalized entitlements, activations}`. It works
+for the demo but doesn't look like the enterprise.
+
+This schema is the **deep hierarchy** the real MathWorks model has. It is a *new,
+separate artifact* — `models.py` is deliberately left untouched so the current
+SQLite demo keeps running until the Phase-3 MCP repoint. This DDL targets **Neon
+Postgres** and is owned by the domain services; the MCP server never touches it.
+
+```
+entity  (customer — POC stand-in for MW Licensee → CDS account/contact)
+  └─ master_license                     umbrella per customer          [NEW TIER]
+       ├─ license                       a customer can have 100s
+       │    ├─ license_product          the sellable offering + seats  [seats live here]
+       │    │      (offering; may be a suite; license_id NULL = unallocated)
+       │    └─ entitlement              LICENSE-scoped capability line  [NEW, first-class]
+       │         │  (suite offering fans out to one per component)
+       │         ├─ policy              1:1 — governs usage             [NEW]
+       │         ├─ entitlement_person  who is ASSIGNED (MW join)       [NEW, v2]
+       │         └─ activation          machine-level USE (× user × machine × heartbeat)
+       └─ master_license_admin          administrators (MASTER scope)   [v2: was license-scoped]
+
+app_user ──< license_end_user   >── license           (seat membership / "licensed end users")
+app_user ──< entitlement_person >── entitlement        (assignment — who holds it)
+app_user ──< activation         >── entitlement        (usage — where it runs)
+product  ──< product_suite_component >── product        (suite → components; POC abstraction)
+```
+
+> **Assignment vs usage (the v2 correction):** MW separates *who holds an
+> entitlement* (`EntitlementPerson`) from *where it runs* (activation). v1 folded
+> both into activation; v2 restores the split. See §9.
+
+---
+
+## 2. Resolved open questions (the T1 decisions)
+
+### Q1 — Entitlement scope: **license-scoped** ✅ (confirmed by the MW spec)
+An `entitlement` is a grantable capability line **under a license**, derived from
+a `license_product` offering. It is **not** user-owned. Confirmed by MW
+`Entitlement.licenseId` + `masterLicenseId` (EntitlementWS). **v2 refinement:**
+the user relationship splits into two MW-faithful joins — `entitlement_person`
+(assignment: who holds it) and `activation` (usage: where it runs). v1 had only
+the latter.
+
+- **Why:** matches strategy §4 (entitlement sits under license, not user), and
+  keeps seat/usage math on the license side. Suites fan out cleanly: one
+  offering → one entitlement per component product.
+- **Consequence:** `activation` carries `user_id` (who) + `machine_id` (where) +
+  `entitlement_id` (what). Uniqueness = `(entitlement_id, user_id, machine_id)`.
+- **Contrast with the flat POC**, where `entitlement` was a denormalized
+  `user × license × product` row. That collapses here into
+  `entitlement` (license side) + `activation` (user side).
+
+### Q2 — Suite vs single product: **both, via a fan-out table** ✅
+`product.is_suite` flags suite offerings; `product_suite_component` maps a suite
+to its atomic products. A `license_product` whose product is a suite generates
+one `entitlement` per component (the "CWS → ~8 entitlements" behaviour); an
+atomic offering generates exactly one. The catalog holds both atomic parts and
+suites in one `product` table — simplest thing that still models the fan-out.
+
+### Q3 — Policy: **its own table, 1:1 with entitlement** ✅
+`policy.entitlement_id` is `UNIQUE` → strictly one policy per entitlement (which
+also matches the §6 proportions: entitlements ≈ policies). Kept as a separate
+table (not inlined onto `entitlement`) because it's a distinct domain concept
+owned by the **Entitlement service** and can evolve independently.
+
+**Policy fields — chosen because each drives a real usage rule:**
+| field | meaning | why it matters |
+|---|---|---|
+| `policy_type` | `named` \| `concurrent` | the two real licensing models |
+| `max_activations` | per-user (named) or total (concurrent) | seat/usage enforcement |
+| `activation_ttl_days` | heartbeat staleness window | **powers stale-activation detection** — the Story 2 demo |
+| `allow_offline` | offline use permitted | realistic policy knob |
+| `reactivation_limit` | install-reset budget | backs `reset_installation_slot` |
+
+### Deferred (not in this DDL)
+- **CS identity + audit** (`cs_*`, `cs_audit_log`) stay MCP-side / a future Audit
+  service — out of this cut per TASKS "Out of this cut".
+- **Audit as its own service vs per-service** — still open (strategy §5).
+
+---
+
+## 3. Modeling conventions & the rationale (teaching notes)
+
+- **BIGINT surrogate PKs everywhere.** Child tables run to millions of rows; a
+  compact integer FK is smaller in every index and far faster to bulk-`COPY`
+  than a text key. The flat POC used `L-XXXXX` text as the license PK — fine at
+  800 rows, wasteful at scale.
+- **Human refs kept as `UNIQUE TEXT`** (`license_ref = 'L-99001'`,
+  `master_license_ref = 'ML-99000'`). External callers and the demo look up by
+  these; internal joins use the surrogate. Best of both.
+- **Native `ENUM` types** for closed sets (statuses, `entitlement_type`,
+  `activation_type`). Values mirror the MW enums. Postgres enums are stored as
+  4-byte OIDs — cheap — and reject bad values at write time.
+- **`app_user`, not `user`** — `user` is a reserved word in Postgres.
+- **Every FK access path is indexed.** This is the single most important rule for
+  the §5 "key-scoped / bounded lookups only" contract: at 10M rows a service
+  endpoint must hit an index, never scan. `ix_activation_user_status` is a
+  composite tuned for the `check_user_entitlements` path (filter a user's
+  activations by status without touching the heap for the common case).
+- **Declaration order = dependency order.** Postgres needs a referenced table to
+  exist when an FK is declared (it does *not* defer that to COMMIT — only
+  *DEFERRABLE constraint checks* are deferred). So `app_user` is declared before
+  `activation`, etc. This bit us once in draft; the file is now ordered correctly.
+
+---
+
+## 4. Representative scale (default `--scale 0.1`, ~1.5M rows)
+
+**Default is free-tier-sized.** The generator defaults to `--scale 0.1` — a
+credible enterprise (~1,500 customers) at **~1.5M rows / 266 MB**, which fits
+Neon's free tier ($0). Because every service query is *key-scoped* (an index
+seek), latency is flat vs. row count — you gain nothing on performance by hosting
+more. `--scale 1.0` (~15M / ~2.6 GB) is a **local-only scale test** (needs a paid
+tier to host); run it in Docker for a screenshot, don't pay to keep it.
+
+Measured at the default (`--scale 0.1`), all ratios emerge from per-parent draws:
+
+| table | rows (scale 0.1) | ×10 = full | note |
+|---|---|---|---|
+| entity | 1.5K | 15K | customers |
+| app_user | 148K | 1.5M | ~99 per entity |
+| master_license | 2.8K | 28K | ~1.9 per entity |
+| license | 32K | 325K | ~12 per master license |
+| license_product | 102K | 1.0M | ~3.5 offerings/license (+ unallocated) |
+| entitlement | 179K | 1.8M | fan-out: atomic=1, suites×~6–8 |
+| policy | 179K | 1.8M | 1:1 with entitlement |
+| entitlement_person | 257K | 2.6M | ~1.6 assignees per entitlement |
+| activation | 215K | 2.2M | ~1.2 per entitlement |
+| license_end_user | 403K | 4.0M | seat memberships |
+| master_license_admin | 4.0K | 40K | ~1.4 per master license |
+| **total** | **~1.52M** | **~15M** | |
+
+Ratios are tuned in the generator, not the schema — the DDL is independent of counts.
+
+---
+
+## 5. Demo scenario mapping (Story 1 + Story 2 must still run)
+
+The Acme / L-99001 / jane.doe / MAC-OLD-7291 scenario plants cleanly:
+
+| element | row |
+|---|---|
+| Acme Corp | `entity` |
+| Acme umbrella | `master_license` ML-99000 |
+| The license | `license` L-99001, status active |
+| Simulink offering, 10 seats | `license_product` (seat_count=10), 10 `license_end_user` rows → **at capacity** |
+| Simulink capability | `entitlement` under L-99001 (`activation_type = standalone_named_user`) |
+| jane.doe **assigned** to it | `entitlement_person` (user=jane, role=user) — she *holds* the entitlement |
+| Usage rule | `policy` (`activation_ttl_days`=30) |
+| jane.doe's stale **activation** | `activation` on that entitlement, machine MAC-OLD-7291, `last_heartbeat` 94 days ago, status inactive → **94 > 30 = stale** |
+
+Note the v2 split in action: jane is *assigned* (`entitlement_person`) yet her
+*usage* (`activation`) has gone stale — the exact CS situation Story 2 diagnoses.
+
+The stale-activation logic that was hard-coded in the POC now falls out of data:
+`now() - last_heartbeat > policy.activation_ttl_days`. That's the point of giving
+policy a real home — the rule becomes queryable, not magic. (This gets planted by
+**A3**.)
+
+---
+
+## 6. How to apply / verify
+
+```bash
+# throwaway Postgres to validate the DDL (no Neon needed):
+docker run -d --rm --name ddltest -e POSTGRES_PASSWORD=x -e POSTGRES_DB=lic postgres:16-alpine
+docker cp db/schema.sql ddltest:/schema.sql
+docker exec ddltest psql -U postgres -d lic -v ON_ERROR_STOP=1 -f /schema.sql
+docker stop ddltest
+```
+Against Neon (once T0 provisions it): `psql "$NEON_URL" -f db/schema.sql`.
+
+---
+
+## 7. Bulk generator (A2) — [`../scripts/generate_bulk.py`](../scripts/generate_bulk.py)
+
+Deterministic, streaming, coherent bulk loader that fills this schema via Postgres
+`COPY`. Key properties (see the module docstring for the *why*):
+
+- **Deterministic** — one seeded RNG; `(--seed, --scale)` → byte-identical data
+  (verified: identical `md5(app_user)` across runs). Lets A3 plant golden records reproducibly.
+- **Streaming COPY** — rows go straight into `COPY … FROM STDIN`, never materialized.
+- **Generator owns the ids** — ids assigned `1..N` and written explicitly (needs the
+  `GENERATED BY DEFAULT` identity); FKs computed with no DB round-trips. Sequences are
+  bumped past `max(id)` after load (`fix_sequences`).
+- **Referential coherence via contiguous blocks** — each parent owns a contiguous child
+  id range, so "a random user of this entity" is `base+randrange(count)`. Verified:
+  **0** cross-entity assignments in `entitlement_person`.
+- **Proportions emerge from per-parent draws** — `--scale` multiplies entity count; ratios
+  hold at any size.
+
+**Local dev database (recommended — free, persistent):** a one-command Postgres in
+[docker-compose.yml](docker-compose.yml) with a named volume, so the dataset
+survives restarts.
+
+```bash
+cd db && docker compose up -d          # start (data persists; down -v to wipe)
+# load the default ~1.5M-row dataset:
+LICENSING_PG_URL=postgresql://licensing:licensing@localhost:5433/licensing \
+  .venv/bin/python scripts/generate_bulk.py --reset --verify
+docker compose exec db psql -U licensing -d licensing    # poke around
+```
+
+Other scales:
+```bash
+# quick smoke test (~46K rows):
+… scripts/generate_bulk.py --reset --scale 0.003 --verify
+
+# full ~15M-row scale test — LOCAL only (needs a paid tier to host):
+… scripts/generate_bulk.py --reset --scale 1.0 --verify
+
+# host on Neon once T0 provisions it (default scale fits the free tier):
+LICENSING_PG_URL="$NEON_URL" … scripts/generate_bulk.py --reset --verify
+```
+
+`--reset` drops & re-applies `schema.sql`; `--verify` prints per-table counts, FK-integrity
+checks (all 0), and realism signals (stale activations, unallocated products). Measured:
+default scale → **1.52M rows in ~19s / 266 MB**, all FK checks clean.
+
+Approximations documented in-code: activation users are drawn from the entitlement's
+*entity* (not strictly its assigned `entitlement_person` set); policy fields are drawn
+independently of `entitlement.activation_type`. Both are cheap to tighten if a scenario needs it.
+
+## 8. What this unblocks
+
+- **A1** — `schema.sql` *is* the DDL; migrations wrap it.
+- **A2** — done (above).
+- **A3** — plant Acme / L-99001 / jane.doe golden records (fixed ids, thanks to
+  `BY DEFAULT` identity) on top of a generated dataset.
+- **T2 / B*** — service DTOs are shaped by these tables; the Licensing /
+  Entitlement / Activation service boundaries fall on the tier lines above.
+- **C1** — `data_access/` HTTP clients return these shapes.
+
+---
+
+## 9. MW-fidelity mapping (verified against the real service specs)
+
+Cross-checked against two real MW service specs: **MasterLicenseWS** (REST,
+`GET /v1/master-licenses/{id}`) and **EntitlementWS** (GraphQL `getEntitlements`).
+Verdict: **the hierarchy spine is confirmed; v2 closed the five load-bearing gaps.**
+
+### Confirmed by the spec (no change needed)
+| Our schema | MW evidence |
+|---|---|
+| `master_license → license → license_product` | "Products belong to licenses… nested under `licenses[].licensedProducts[]`. Matches masterlicensewstypes model." |
+| `license_product.seat_count` | `LicensedProduct.quantity` ("Seat quantity") |
+| entitlement **license-scoped** | `Entitlement.licenseId` + `masterLicenseId`; `entitlementType: LICENSE` — anchored to license, not user |
+| `policy` **1:1** with entitlement | `entitlementPolicy: EntitlementPolicy` — a single object per entitlement |
+
+### Fixed in v2 (the critical set)
+| Gap in v1 | MW reality | v2 change |
+|---|---|---|
+| No assignment join | `EntitlementPerson` (`entitlementId`, `webProfileId`, `role`) | added **`entitlement_person`** |
+| Admins license-scoped | `administrators[]` sits on **MasterLicense** | added **`master_license_admin`** (dropped `license_admin`) |
+| Master reachable only via join | `masterLicenseId` denormalized on LicensedProduct + Entitlement | added `master_license_id` to `license_product` + `entitlement` |
+| `license_id` NOT NULL | `unallocatedProducts` = LicensedProduct with `licenseId = null` at master level | made `license_product.license_id` **nullable** |
+| Only `LICENSE`, 3 statuses, `named/concurrent` | `entitlementType`; 6-value status; rich `activationType` | added `entitlement_type`, `activation_type`; widened `entitlement_status` |
+
+### Divergences we keep on purpose (documented, not fixed)
+| MW shape | Ours | Why the shortcut is OK |
+|---|---|---|
+| `EntitlementPolicy` = `policyName` + generic `policyRuleValue[]` (ruleName/ruleValue bag) | fixed columns (`activation_ttl_days`, `max_activations`, …) + `policy_name`, `quantity` | the specific rules that drive the POC read cleaner as columns; the bag is easy to add later if a service needs arbitrary rules |
+| `product_suite_component` (our table) | — | **our invention** — MW resolves suites via `businessOfferingId`/configurator, not an explicit table; kept as a POC abstraction for fan-out |
+| Customer identity in **CDS**, referenced by `Licensee.entityId`/`entityType` | local `entity` table | this *is* the "data_access replaces an external service" story — CDS becomes a service call in prod |
+| Bare integer ids | `L-`/`ML-` text refs (+ BIGINT PKs) | POC lookup convenience; internal joins already use the surrogate |
+
+### Deliberate scope cuts (out of this DDL)
+Temporal/renewal detail (`currentServiceStartDate/EndDate`, `serviceDates[]`,
+`renewalOptions[]`, `release`), `activationKeys[]`/FIK, and **TSUR** trial
+entitlements. None are needed for Story 1/2 or the 3-service split; the
+`entitlement_type` column reserves room for TSUR without generating it.
+
+### Note on `activation`
+The machine-level `activation` table (user × machine × heartbeat) is **not** in
+either spec read — it belongs to the activation / LicenseUse service. It's our
+faithful stand-in for that domain and stays as designed.

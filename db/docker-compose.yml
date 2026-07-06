@@ -1,0 +1,34 @@
+# Local Postgres for the deep-hierarchy schema — one-command dev database.
+#
+#   cd db && docker compose up -d          # start (data persists in a named volume)
+#   docker compose down                    # stop (keeps data)
+#   docker compose down -v                 # stop AND wipe the dataset
+#
+# Then load ~1.5M rows (free-tier-sized, scale 0.1 default):
+#   LICENSING_PG_URL=postgresql://licensing:licensing@localhost:5433/licensing \
+#     .venv/bin/python scripts/generate_bulk.py --reset --verify
+#
+# Connect with psql:
+#   docker compose exec db psql -U licensing -d licensing
+#
+# Port 5433 (not 5432) so it won't clash with a system Postgres.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: licensing-postgres
+    environment:
+      POSTGRES_USER: licensing
+      POSTGRES_PASSWORD: licensing
+      POSTGRES_DB: licensing
+    ports:
+      - "127.0.0.1:5433:5432"          # localhost only
+    volumes:
+      - licensing_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U licensing -d licensing"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  licensing_pgdata:

@@ -47,7 +47,7 @@ Consequences:
 | Decision | Choice | Rationale |
 |---|---|---|
 | Database | **Neon Postgres** | Serverless, generous free tier, scales to zero; the service layer hides the engine so SQL-Server fidelity isn't needed. |
-| Scale | **Representative, ~5–10M rows** | Full depth + credible volume that stresses queries; literal 40M (→ billions of child rows) is neither feasible nor necessary. |
+| Scale | **Default ~1.5M rows (free-tier-sized); ~15M as a local-only scale test** | Full depth + credible volume. Key-scoped queries are index seeks, so latency is flat vs. row count — no need to *host* more. ~1.5M fits Neon's free tier ($0); 266 MB measured. See db/SCHEMA.md §4. |
 | Service shape | **Multiple domain services** | Looks like a real enterprise landscape; strongest "this mirrors prod" story. |
 | Service→service auth | shaped like prod, simple for POC | Signed service token / client-credentials (security doc Boundary 2). |
 | Dev runtime | local `docker-compose` for services + MCP, pointing at Neon cloud DB | No cloud needed for daily dev except the DB. ❓ optionally deploy services to a free host for a hosted demo. |
@@ -106,20 +106,16 @@ read+write, service-auth on every call.
 ## 6. Scale plan
 
 - **Deterministic bulk generator** (not ORM row-by-row) → Postgres `COPY` for
-  fast load. Real reference data (product catalog; CSL/PRPA later) + synthetic
-  subjects, with planted demo + test records.
-- Rough proportions for ~10M rows (tune in Phase 1):
-  | table | approx rows |
-  |---|---|
-  | entities | 20K |
-  | master_licenses | 25K |
-  | licenses | 750K |
-  | license_products | 4M |
-  | entitlements | 1.5M |
-  | policies | 1.5M |
-  | activations | 4M |
-- **Storage check (❓ / risk):** Neon's free tier may not hold ~10M rows; budget
-  for Neon's low-cost tier (Rohit OK to "pay a little") if needed.
+  fast load. **DONE:** `scripts/generate_bulk.py` (A2). Real reference data
+  (product catalog; CSL/PRPA later) + synthetic subjects, planted demo/test
+  records via A3.
+- **Proportions & measured sizes** — see db/SCHEMA.md §4 (the generator, not this
+  doc, is the source of truth). Default `--scale 0.1` = **~1.52M rows / 266 MB**;
+  `--scale 1.0` = **~15M / ~2.6 GB** (local-only).
+- **Storage / cost (RESOLVED):** default dataset (266 MB) **fits Neon's free tier —
+  $0**. Neon compute scales to zero when idle, so an intermittently-queried POC is
+  effectively free. The ~15M set is generated **locally in Docker** for a scale
+  screenshot; we don't pay to host it.
 
 ## 7. Phased roadmap
 
@@ -136,7 +132,8 @@ read+write, service-auth on every call.
 
 - **Cold-start latency:** Neon scales to zero; first query after idle can be
   seconds — warm the DB before a live demo, or disable auto-suspend during demos.
-- **Neon free storage** may be too small for 10M rows → cheap paid tier.
+- ~~**Neon free storage** may be too small for 10M rows~~ **RESOLVED:** default
+  dataset is ~1.5M rows / 266 MB → fits Neon free tier ($0); 15M is local-only.
 - **Service orchestration:** multiple services = more to run — `docker-compose`
   keeps it one command (same pattern as the Keycloak setup).
 - **Connection pooling** at scale → use Neon's pooled connection endpoint.
@@ -157,7 +154,7 @@ read+write, service-auth on every call.
 
 1. Entitlement ↔ product mapping (single vs suite) and `policy` attributes (§4).
 2. Audit as its own service vs per-service (§5).
-3. Neon storage tier for ~10M rows — free vs low-cost paid (§6).
+3. ~~Neon storage tier for ~10M rows — free vs low-cost paid~~ **RESOLVED: free tier** (default ~1.5M / 266 MB; §6).
 4. Hosted demo: run services locally via compose, or deploy to a free host (§3).
 5. Exact representative proportions (§6) — tune to the real ratios Rohit sees.
 

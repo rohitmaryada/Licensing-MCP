@@ -117,29 +117,33 @@ owned by the **Entitlement service** and can evolve independently.
 
 ---
 
-## 4. Representative scale (starting point — tune in A2)
+## 4. Representative scale (default `--scale 0.1`, ~1.5M rows)
 
-Strategy §6's proportions were rough placeholders and were internally
-inconsistent with suite fan-out (they had fewer entitlements than offerings).
-With license-scoped entitlements fanning out from suites, entitlements should
-**exceed** offerings on suite lines. Proposed starting point (~13M rows):
+**Default is free-tier-sized.** The generator defaults to `--scale 0.1` — a
+credible enterprise (~1,500 customers) at **~1.5M rows / 266 MB**, which fits
+Neon's free tier ($0). Because every service query is *key-scoped* (an index
+seek), latency is flat vs. row count — you gain nothing on performance by hosting
+more. `--scale 1.0` (~15M / ~2.6 GB) is a **local-only scale test** (needs a paid
+tier to host); run it in Docker for a screenshot, don't pay to keep it.
 
-| table | approx rows | note |
-|---|---|---|
-| entity | 15K | customers |
-| app_user | 1.5M | end users across all entities |
-| master_license | 20K | ~1.3 per entity |
-| license | 300K | ~15 per master license |
-| license_product | 1.2M | ~4 offerings per license |
-| entitlement | 2.5M | fan-out: atomic=1, suites×~8 |
-| policy | 2.5M | 1:1 with entitlement |
-| entitlement_person | 4M | ~1.6 assignees per entitlement |
-| activation | 3M | ~1.2 per entitlement |
-| license_end_user | 4M | seat memberships |
-| master_license_admin | 25K | ~1.3 per master license |
+Measured at the default (`--scale 0.1`), all ratios emerge from per-parent draws:
 
-These are the generator's (A2) inputs to tune against real MathWorks ratios; the
-schema itself is independent of the exact counts.
+| table | rows (scale 0.1) | ×10 = full | note |
+|---|---|---|---|
+| entity | 1.5K | 15K | customers |
+| app_user | 148K | 1.5M | ~99 per entity |
+| master_license | 2.8K | 28K | ~1.9 per entity |
+| license | 32K | 325K | ~12 per master license |
+| license_product | 102K | 1.0M | ~3.5 offerings/license (+ unallocated) |
+| entitlement | 179K | 1.8M | fan-out: atomic=1, suites×~6–8 |
+| policy | 179K | 1.8M | 1:1 with entitlement |
+| entitlement_person | 257K | 2.6M | ~1.6 assignees per entitlement |
+| activation | 215K | 2.2M | ~1.2 per entitlement |
+| license_end_user | 403K | 4.0M | seat memberships |
+| master_license_admin | 4.0K | 40K | ~1.4 per master license |
+| **total** | **~1.52M** | **~15M** | |
+
+Ratios are tuned in the generator, not the schema — the DDL is independent of counts.
 
 ---
 
@@ -198,19 +202,33 @@ Deterministic, streaming, coherent bulk loader that fills this schema via Postgr
 - **Proportions emerge from per-parent draws** — `--scale` multiplies entity count; ratios
   hold at any size.
 
-```bash
-# smoke test (~46K rows) against a throwaway Postgres:
-docker run -d --rm --name pg -p 5433:5432 -e POSTGRES_PASSWORD=x -e POSTGRES_DB=lic postgres:16
-LICENSING_PG_URL=postgresql://postgres:x@localhost:5433/lic \
-  .venv/bin/python scripts/generate_bulk.py --reset --scale 0.003 --verify
+**Local dev database (recommended — free, persistent):** a one-command Postgres in
+[docker-compose.yml](docker-compose.yml) with a named volume, so the dataset
+survives restarts.
 
-# full ~15M-row load (~3 min; point at Neon once T0 provisions it):
-LICENSING_PG_URL="$NEON_URL" .venv/bin/python scripts/generate_bulk.py --reset --scale 1.0 --verify
+```bash
+cd db && docker compose up -d          # start (data persists; down -v to wipe)
+# load the default ~1.5M-row dataset:
+LICENSING_PG_URL=postgresql://licensing:licensing@localhost:5433/licensing \
+  .venv/bin/python scripts/generate_bulk.py --reset --verify
+docker compose exec db psql -U licensing -d licensing    # poke around
+```
+
+Other scales:
+```bash
+# quick smoke test (~46K rows):
+… scripts/generate_bulk.py --reset --scale 0.003 --verify
+
+# full ~15M-row scale test — LOCAL only (needs a paid tier to host):
+… scripts/generate_bulk.py --reset --scale 1.0 --verify
+
+# host on Neon once T0 provisions it (default scale fits the free tier):
+LICENSING_PG_URL="$NEON_URL" … scripts/generate_bulk.py --reset --verify
 ```
 
 `--reset` drops & re-applies `schema.sql`; `--verify` prints per-table counts, FK-integrity
 checks (all 0), and realism signals (stale activations, unallocated products). Measured:
-scale 0.1 → **1.52M rows in ~19s**, all FK checks clean.
+default scale → **1.52M rows in ~19s / 266 MB**, all FK checks clean.
 
 Approximations documented in-code: activation users are drawn from the entitlement's
 *entity* (not strictly its assigned `entitlement_person` set); policy fields are drawn

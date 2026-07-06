@@ -42,7 +42,11 @@ from datetime import date, datetime, timedelta
 
 import psycopg
 
-# ── Tunable model (full-scale ≈ 13M rows at scale 1.0) ───────────────────────
+# ── Tunable model ────────────────────────────────────────────────────────────
+# ENTITIES_FULL is the entity count at scale 1.0; --scale multiplies it and every
+# other table follows from per-parent draws. Default scale is 0.1 (see argparse):
+#   scale 0.1 → ~1,500 entities → ~1.5M rows / ~266 MB  (free-tier-sized)
+#   scale 1.0 → ~15,000 entities → ~15M rows / ~2.6 GB  (local scale test only)
 ENTITIES_FULL = 15_000
 TODAY = date(2026, 7, 1)
 
@@ -98,7 +102,9 @@ def rand_date(rng, start: date, end: date) -> date:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scale", type=float, default=1.0, help="multiplies entity count (1.0 ≈ full ~13M rows)")
+    ap.add_argument("--scale", type=float, default=0.1,
+                    help="multiplies entity count. DEFAULT 0.1 ≈ 1.5M rows / ~266 MB (fits Neon free tier). "
+                         "1.0 ≈ 15M rows / ~2.6 GB (needs a paid tier — use only for a local scale test).")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--reset", action="store_true", help="drop & recreate schema from db/schema.sql first")
     ap.add_argument("--verify", action="store_true", help="print row counts + FK integrity checks after load")

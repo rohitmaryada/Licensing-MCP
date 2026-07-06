@@ -5,20 +5,30 @@ A local proof-of-concept MCP (Model Context Protocol) server that exposes MathWo
 - **Read Surface** — customer-facing queries (license status, entitlements, seat counts)
 - **CS Action Surface** — role-gated write tools for Customer Service workflows, with full audit logging
 
-Built on Python 3.13 + MCP SDK + SQLAlchemy + SQLite, running over stdio for Claude Desktop.
+Built on Python 3.13 + MCP SDK + SQLAlchemy + SQLite, running over stdio for Claude
+Desktop. Now **expanding toward a 3-tier enterprise architecture** (tools → domain
+microservices → cloud Postgres) — see [Expansion Phase](#expansion-phase--scale-services--compliance-in-progress).
 
 ---
 
 ## Project Status
 
-| Week | Focus | Status |
-|---|---|---|
-| Week 1 | Data foundation — schema, models, seeded database | ✅ Complete |
-| Week 2 | MCP server + 6 read tools, inspector-tested, live in Claude Desktop | ✅ Complete |
-| Week 3 | CS write surface — identity gate, 6 write tools, atomic audit log, MCP prompts | ✅ Complete |
-| Week 4 | Demo rehearsal (Story 1 + Story 2 verified live), presentation deck | 🔄 In progress |
+**Phase 1 — the local POC — is complete and demoed.** We are now in **Phase 2:
+expanding the POC toward enterprise realism** (real scale, domain microservices,
+a compliance gate). See **[TASKS.md](TASKS.md)** for the live tracker.
 
-**13 tools + 2 prompts, all verified end-to-end.** Both demo stories have been rehearsed live through Claude Desktop. Remaining: final presentation polish and delivery.
+| Phase | Focus | Status |
+|---|---|---|
+| POC W1 | Data foundation — schema, models, seeded SQLite | ✅ Complete |
+| POC W2 | MCP server + 6 read tools, live in Claude Desktop | ✅ Complete |
+| POC W3 | CS write surface — identity gate, 6 write tools, atomic audit log, prompts | ✅ Complete |
+| POC W4 | Demo rehearsal (Story 1 + Story 2 live), presentation deck | ✅ Complete |
+| POC+ | Custom agent host (`agent/`) + Keycloak OIDC auth | ✅ Complete |
+| **Scale** | Deep-hierarchy schema, ~1.5M-row generator, 3-service contracts | 🔄 **In progress** (see below) |
+
+**13 tools + 2 prompts, all verified end-to-end** through both Claude Desktop and a
+custom agent host. The scale phase is additive — the live POC keeps working while the
+enterprise-grade data layer and services are built alongside it.
 
 ---
 
@@ -98,6 +108,51 @@ Story 2 flow: check entitlements → seats at capacity → find stale activation
 | `slides/` | Slidev presentation deck (apple-basic theme) — `cd slides && npm install && npm run dev` |
 | `agent/README.md` | Custom agent host — run instructions, architecture, and the Keycloak auth hand-off |
 | `keycloak/` | One-command Keycloak auth (`docker compose up`) — pre-imported realm, client, and DB-matched CS users |
+| **`TASKS.md`** | **Scale-phase tracker** — work breakdown, ownership (P1/P2), dependencies, status |
+| **`docs/scale-and-services-strategy.md`** | The 3-tier plan (tools → services → cloud DB); locked decisions |
+| **`docs/positioning.md`** | Why this exists — spectrum of autonomy + the architectural seams (pitch material) |
+| **`db/SCHEMA.md`** | Deep-hierarchy schema — ERD, decisions, MW-fidelity mapping, generator guide |
+| **`services/CONTRACTS.md`** | API contracts for the 3 domain services (read + write) — the T2 spec |
+| **`compliance/PRD.md`** | Phase-5 license-creation compliance gate (denied-party screening) |
+
+---
+
+## Expansion Phase — Scale, Services & Compliance (in progress)
+
+The POC proves the architecture but doesn't yet *look* like the enterprise. The
+scale phase moves to a **3-tier system** — `AI agent → MCP tools → domain
+microservices → cloud database` — so the pitch becomes literal: *"swap our
+stand-in services for your real microservices; the MCP doesn't change."* Tracked
+in [TASKS.md](TASKS.md).
+
+> ⚠️ **Two data models live in this repo — don't confuse them:**
+> - **Live POC (today):** flat SQLite at `data/licensing.db`, driven by
+>   `licensing_mcp/models.py`. This is what the MCP server and demos run on now.
+> - **Scale phase (next-gen):** the **deep-hierarchy Postgres** schema in `db/`,
+>   filled by `scripts/generate_bulk.py`. **Not yet wired to the MCP** — the tools
+>   repoint to it (via services) in the Phase-3 step. `models.py` is deliberately
+>   left untouched until then so the live demo never breaks.
+
+**What's built so far (all on `main`):**
+- **Deep schema** — `db/schema.sql` (13 tables), reconciled against the real MW
+  service specs. ERD + rationale in [db/SCHEMA.md](db/SCHEMA.md).
+- **Bulk generator** — `scripts/generate_bulk.py`: deterministic, streaming
+  Postgres `COPY`, ~1.5M realistic rows (free-tier-sized).
+- **Service contracts** — [services/CONTRACTS.md](services/CONTRACTS.md): the 3
+  domain services (Licensing / Entitlement / Activation), read + write.
+
+**Run the deep-hierarchy DB locally (no cloud, no cost):**
+
+```bash
+cd db && docker compose up -d          # persistent Postgres on localhost:5433
+LICENSING_PG_URL=postgresql://licensing:licensing@localhost:5433/licensing \
+  .venv/bin/python scripts/generate_bulk.py --reset --verify   # ~1.5M rows
+docker compose exec db psql -U licensing -d licensing          # explore
+```
+
+**Building the services?** Start at [TASKS.md](TASKS.md) → *Workstream B* (the
+quickstart there is the same as above), and implement against
+[services/CONTRACTS.md](services/CONTRACTS.md).
 
 ---
 
@@ -178,29 +233,35 @@ LICENSING_DB_PATH=/tmp/licensing-test.db CS_ACTOR_ID=rep.sarah@mathworks.com \
 
 ```
 Licensing-MCP/
-├── data/
-│   ├── raw/                       # Kaggle CSV (git-ignored)
-│   └── licensing.db               # Seeded SQLite DB (committed)
-├── licensing_mcp/
+├── licensing_mcp/                 # ── THE LIVE POC (flat SQLite) ──
 │   ├── models.py                  # SQLAlchemy ORM — all 17 tables
 │   ├── database.py                # Session factory + LICENSING_DB_PATH override
 │   ├── identity.py                # CS actor resolution + permission checks
 │   ├── cs_executor.py             # Write pipeline: gate → mutate → audit → commit
 │   ├── elicitation.py             # Spec-compliant elicitation schema base
 │   ├── prompts.py                 # MCP prompts (user-invocable)
-│   ├── server_instance.py         # Singleton FastMCP app
 │   ├── server.py                  # Tool registration + stdio entry point
-│   ├── data_access/
-│   │   ├── license_queries.py     # Read queries (→ microservice calls in prod)
-│   │   ├── write_queries.py       # Mutations with before/after state capture
-│   │   └── audit.py               # Audit writer + history reader
+│   ├── data_access/               # Read/write queries (→ HTTP service calls in prod)
 │   └── tools/                     # One file per MCP tool (13 total)
+├── data/
+│   ├── raw/                       # Kaggle CSV (git-ignored)
+│   └── licensing.db               # Seeded SQLite DB (committed) — the LIVE POC db
 ├── scripts/
-│   └── seed.py                    # Hybrid seeder: AWS SaaS + Faker
+│   ├── seed.py                    # Hybrid seeder for the SQLite POC (AWS SaaS + Faker)
+│   └── generate_bulk.py           # ── SCALE: bulk Postgres generator (~1.5M rows) ──
+├── db/                            # ── SCALE: deep-hierarchy Postgres schema ──
+│   ├── schema.sql                 # DDL (13 tables) — reconciled vs. real MW specs
+│   ├── SCHEMA.md                  # ERD, decisions, MW-fidelity mapping
+│   └── docker-compose.yml         # One-command persistent local Postgres (:5433)
+├── services/
+│   └── CONTRACTS.md               # ── SCALE: T2 API contracts for the 3 services ──
+├── agent/                         # Custom agent host (Claude API loop + MCP bridge + UI)
+├── keycloak/                      # One-command Keycloak OIDC auth (docker compose)
+├── compliance/PRD.md              # Phase-5 compliance gate spec
+├── docs/                          # scale-and-services-strategy.md, positioning.md
 ├── slides/                        # Slidev presentation deck
-├── project-proposal.md
-├── security-considerations-mcp-access.md
-├── presentation-and-questions-notes.md
+├── TASKS.md                       # Scale-phase tracker (ownership, deps, status)
+├── project-proposal.md · security-considerations-mcp-access.md · presentation-and-questions-notes.md
 ├── pyproject.toml
 └── requirements.txt
 ```
@@ -226,3 +287,8 @@ This is an internal POC. If you're a collaborator:
 3. Write tools must go through `cs_executor.execute_cs_write()` — never mutate directly
 4. Elicitation schemas must inherit from `licensing_mcp.elicitation.ElicitationBase` (MCP spec restricts these to flat primitives)
 5. Test against a DB copy: `LICENSING_DB_PATH=/tmp/test.db`
+
+**Working on the scale phase (services / data)?** Start at **[TASKS.md](TASKS.md)** —
+it has the work breakdown, ownership (P1/P2), and dependencies. Build services against
+[services/CONTRACTS.md](services/CONTRACTS.md); run the deep-hierarchy DB locally per the
+[Expansion Phase](#expansion-phase--scale-services--compliance-in-progress) quickstart.

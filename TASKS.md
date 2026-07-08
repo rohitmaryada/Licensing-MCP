@@ -54,7 +54,7 @@ MCP repoint is shared/whoever's free; Verify is joint.
 
 ## Workstream C — MCP repoint (either; start on mocks after T2)
 
-- [ ] **C1 · `data_access/` → httpx clients** against the contracts (mock server first, then real services) · _M_ · dep: T2
+- [~] **C1 · `data_access/` → httpx clients** against the contracts (mock server first, then real services) · _M_ · dep: T2 → **IN PROGRESS:** scaffolding done + `get_license_products` repointed end-to-end. `LICENSING_BACKEND=sqlite|services` toggle (default sqlite, live path untouched); `data_access/service_client.py` (httpx, env URLs=C3, auth headers=C2 stub); `services/mock/` fixture mock. Proven: same tool output shape via HTTP. **Surfaced a decision — seat-model reconciliation (per-product vs summed) — see CONTRACTS.md §8.** Remaining: repoint the other read tools + writes.
 - [ ] **C2 · Wire service-auth token** onto outbound calls (Boundary 2) · _S_ · dep: C1, B5
 - [ ] **C3 · Env-driven service URLs + local-dev fallback** · _S_ · dep: C1
 

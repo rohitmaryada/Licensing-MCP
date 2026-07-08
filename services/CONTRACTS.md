@@ -224,3 +224,24 @@ SQLAlchemy to the HTTP call above. That's the whole bet.
 - Assignment writes (add/remove `entitlement_person`) — not yet needed by a tool; add to Entitlement service if a workflow appears.
 - Whether `search_entitlements` also needs an Entitlement-service search path (by product/expiry/seat-util) vs. staying entity/license-scoped on Licensing.
 - Service-to-service auth mechanics (token issuance/validation) live in **B5**; this doc only fixes the header contract.
+- **Add `entityId` + `entityName` to the `License` DTO?** Licensing owns `entity`,
+  so denormalizing avoids a master-license hop for the common "who owns this license"
+  need. (The mock already does this.)
+
+### Seat-model reconciliation (surfaced by C1 — needs a decision)
+The flat POC exposed a **single license-level `seat_count`** and a `10/10`
+utilization. The deep model puts **`seatCount` on each `license_product`** (per
+offering) and has **no license-level seat number**, so the current `get_license_products`
+tool shape can't be reproduced 1:1. Two things to decide:
+
+1. **License-level seats** — is "at capacity" now a **per-offering** concept
+   (MATLAB 10/10, Simulink 10/10 separately)? The C1 adapter currently *sums*
+   product seats as a stopgap (`10 + 10 = 20`), which changes the demo's "10/10"
+   story to "10/20". Per-product utilization is almost certainly the correct model —
+   **recommend the tool output evolves to per-product seat/usage.**
+2. **`license_type`** — no deep equivalent (the deep model carries per-product
+   `licenseTerm`/`activationType`). The adapter returns `null`; decide whether to
+   drop the field or derive it.
+
+These are the "tools stay identical" bet's real edges: the *handlers* don't change,
+but a few *output fields* must, because the deep model is more correct than the flat one.

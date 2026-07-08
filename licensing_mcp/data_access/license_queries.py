@@ -320,6 +320,10 @@ def query_license_products(license_id: str, session: Session) -> dict:
         GET /licensing-service/v1/licenses/{license_id}/products
         Headers: Authorization: Bearer {service_token}
     """
+    # C1: services backend — reconstruct this flat shape from deep-model DTOs.
+    if hasattr(session, "get_license_products"):
+        return _license_products_via_services(session, license_id)
+
     # Single query with eager joins — avoids N+1 queries
     license = (
         session.query(License)
@@ -365,6 +369,50 @@ def query_license_products(license_id: str, session: Session) -> dict:
                 "base_price_usd": p.base_price,
             }
             for p in products
+        ],
+    }
+
+
+# ── C1 adapter: deep-model services → the flat get_license_products shape ────
+#
+# The flat POC bundles license-level seat_count + license_type onto the license.
+# The deep model puts seats on each license_product and has no license_type. So
+# this adapter RECONSTRUCTS the flat shape from deep DTOs. Two provisional
+# decisions (flagged for review — see services/CONTRACTS.md open items):
+#   * seat_count (license-level)  := SUM of per-product seatCount
+#   * license_type                := None (no deep equivalent; deep carries
+#                                    per-product license_term / activation_type)
+def _license_products_via_services(client, license_id: str) -> dict:
+    lic = client.get_license(license_id)                 # GET /licenses/{ref}
+    products = client.get_license_products(license_id)   # GET /licenses/{ref}/products
+    end_users = client.get_license_end_users(license_id)  # GET /licenses/{ref}/end-users
+
+    seat_count = sum(p.get("seatCount", 0) for p in products)   # DECISION (see above)
+    seats_used = sum(1 for u in end_users.get("items", []) if u.get("status") == "active")
+    expiry = date.fromisoformat(lic["expiryDate"])
+
+    return {
+        "license_id": lic["licenseRef"],
+        "entity_name": lic.get("entityName"),
+        "entity_type": lic.get("entityType"),
+        "license_type": None,                                   # DECISION (see above)
+        "status": lic["status"],
+        "seat_count": seat_count,
+        "seats_used": seats_used,
+        "seat_utilization": f"{seats_used}/{seat_count}",
+        "utilization_pct": round((seats_used / seat_count * 100) if seat_count else 0),
+        "start_date": lic["startDate"],
+        "expiry_date": lic["expiryDate"],
+        "days_until_expiry": _days_until(expiry),
+        "product_count": len(products),
+        "products": [
+            {
+                "name": p["productName"],
+                "product_code": p["productCode"],
+                "category": p.get("category"),
+                "base_price_usd": p.get("basePrice"),
+            }
+            for p in sorted(products, key=lambda p: p["productName"])
         ],
     }
 

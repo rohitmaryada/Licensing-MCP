@@ -20,6 +20,15 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from licensing_mcp.models import get_engine
 
+# LICENSING_BACKEND selects where data_access reads from:
+#   "sqlite"   (default) — the flat SQLite POC model (unchanged; live demo path)
+#   "services" — HTTP calls to the domain services (C1). get_session() returns a
+#                ServiceClient instead of a SQLAlchemy Session; the query_*
+#                functions detect it and take the HTTP path. Tool handlers are
+#                identical either way — this is the whole "only data_access
+#                changes" bet, now exercisable end-to-end.
+_BACKEND = os.environ.get("LICENSING_BACKEND", "sqlite").lower()
+
 # Path(__file__) is always this file's location on disk, regardless of where
 # the process was launched from. .parent.parent walks up to the project root.
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -35,21 +44,19 @@ _DB_PATH = Path(os.environ.get(
 _engine = get_engine(str(_DB_PATH))
 
 
-def get_session() -> Session:
+def get_session():
     """
-    Return a new SQLAlchemy Session bound to the database engine.
+    Return a backend handle for data_access.
 
-    Callers are responsible for closing the session. Use as a context manager:
+    - sqlite backend (default): a SQLAlchemy Session bound to the engine.
+    - services backend: a ServiceClient (httpx). It exposes the same lifecycle
+      the tool layer uses (`.close()`, context-manager), so tool handlers don't
+      change. The query_* functions branch on the handle type.
 
-        with get_session() as session:
-            result = session.query(License).filter(...).first()
-
-    Or close manually:
-
-        session = get_session()
-        try:
-            ...
-        finally:
-            session.close()
+    Callers close it (via try/finally or `with`), exactly as before.
     """
+    if _BACKEND == "services":
+        # imported lazily so the sqlite path has no httpx dependency at import time
+        from licensing_mcp.data_access.service_client import ServiceClient
+        return ServiceClient()
     return Session(_engine)

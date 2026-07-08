@@ -1,0 +1,69 @@
+# Service stack for B1 — Licensing / Entitlement / Activation.
+#
+# Does NOT include Postgres — bring that up first via `cd ../db && docker compose up -d`.
+# Reaches the host's already-published Postgres port (5433) via host.docker.internal.
+#
+#   cd services && docker compose up -d --build
+#   docker compose ps
+#   docker compose down
+
+services:
+  licensing:
+    build:
+      context: ..
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE: licensing
+    environment:
+      LICENSING_PG_URL: "postgresql+psycopg://licensing:licensing@host.docker.internal:5433/licensing"
+      SERVICE_NAME: LICENSING
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  entitlement:
+    build:
+      context: ..
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE: entitlement
+    environment:
+      LICENSING_PG_URL: "postgresql+psycopg://licensing:licensing@host.docker.internal:5433/licensing"
+      SERVICE_NAME: ENTITLEMENT
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  activation:
+    build:
+      context: ..
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE: activation
+    environment:
+      LICENSING_PG_URL: "postgresql+psycopg://licensing:licensing@host.docker.internal:5433/licensing"
+      SERVICE_NAME: ACTIVATION
+    ports:
+      - "8003:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

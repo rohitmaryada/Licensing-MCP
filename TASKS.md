@@ -46,7 +46,7 @@ MCP repoint is shared/whoever's free; Verify is joint.
 > - **Service→table ownership + endpoint sketch:** [strategy §5](docs/scale-and-services-strategy.md)
 > - **Blocked on T2** (service contracts) before B1 — pin the endpoints/DTOs first.
 
-- [ ] **B1 · Service scaffolding** — layout for 3 services, shared DB/pool module, health checks, `docker-compose` landscape · _M_ · dep: T2
+- [x] **B1 · Service scaffolding** — layout for 3 services, shared DB/pool module, health checks, `docker-compose` landscape · _M_ · dep: T2 → **DONE:** [services/](services/) — `shared/{config,db,auth,schemas,errors}.py`, one `main.py` per service (Licensing `:8001`, Entitlement `:8002`, Activation `:8003`), shared `Dockerfile` + standalone `services/docker-compose.yml`. All 6 acceptance checks pass (see [services/B1-SETUP.html](services/B1-SETUP.html)). Unblocks B2/B3/B4.
 - [ ] **B2 · Licensing service** — read + write endpoints · _M/L_ · dep: B1, A1
 - [ ] **B3 · Entitlement service** — endpoints · _M_ · dep: B1, A1
 - [ ] **B4 · Activation service** — endpoints (revoke/reset writes) · _M_ · dep: B1, A1

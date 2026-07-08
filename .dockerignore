@@ -1,0 +1,13 @@
+.venv
+.git
+data/
+__pycache__
+*.pyc
+.env
+.env.*
+agent/
+slides/
+keycloak/
+docs/
+scripts/
+licensing_mcp/

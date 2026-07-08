@@ -154,6 +154,26 @@ docker compose exec db psql -U licensing -d licensing          # explore
 quickstart there is the same as above), and implement against
 [services/CONTRACTS.md](services/CONTRACTS.md).
 
+### Running the service stack
+
+B1 (service scaffolding) is done: three FastAPI services — Licensing (`:8001`),
+Entitlement (`:8002`), Activation (`:8003`) — share a DB pool, auth dependency,
+pagination envelope, and error shape under `services/shared/`. Each currently
+exposes only `/health/live`, `/health/ready`, and a `/_demo` route; real
+endpoints land in B2/B3/B4.
+
+```bash
+cd db && docker compose up -d                                    # 1. Postgres on :5433
+LICENSING_PG_URL=postgresql://licensing:licensing@localhost:5433/licensing \
+  .venv/bin/python scripts/generate_bulk.py --reset --verify     # 2. load ~1.5M rows
+cd ../services && docker compose up -d --build                   # 3. build + start the 3 services
+docker compose ps                                                 # 4. all three "Up (healthy)"
+curl -f http://localhost:8001/licensing/v1/health/ready           # 5. spot-check one
+```
+
+See [services/B1-SETUP.html](services/B1-SETUP.html) for the full walkthrough
+(all six acceptance checks, troubleshooting, teardown).
+
 ---
 
 ## Setup

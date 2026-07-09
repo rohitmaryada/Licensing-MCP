@@ -1,0 +1,67 @@
+"""L6b, L7, L8 — /licensing/v1/licenses/*"""
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from services.licensing.queries import (
+    get_end_user_count,
+    get_license_core,
+    get_license_products_all,
+    get_license_products_page,
+    get_licensee,
+    get_master_license_id_for_license,
+    get_master_license_summary,
+    list_master_administrators,
+)
+from services.shared.auth import require_service_auth
+from services.shared.db import get_session
+from services.shared.dto import Administrator, License, LicensedProduct
+from services.shared.errors import NotFoundError
+from services.shared.mappers import (
+    build_license,
+    row_to_administrator,
+    row_to_licensed_product,
+    row_to_licensee_summary,
+    row_to_master_license_summary,
+)
+from services.shared.schemas import Page, PageParams, build_page
+
+router = APIRouter(prefix="/licensing/v1/licenses", dependencies=[Depends(require_service_auth)])
+
+
+@router.get("/{license_id}/administrators", response_model=list[Administrator])
+def get_license_administrators_route(license_id: int, session: Session = Depends(get_session)):
+    # Server resolves license -> master_license_id -> admins: one call for the caller.
+    ml_id = get_master_license_id_for_license(session, license_id)
+    if ml_id is None:
+        raise NotFoundError(detail=f"license {license_id} not found")
+    return [row_to_administrator(r) for r in list_master_administrators(session, ml_id)]
+
+
+@router.get("/{license_id}", response_model=License)
+def get_license_status_route(license_id: int, session: Session = Depends(get_session)):
+    lic_row = get_license_core(session, license_id)
+    if lic_row is None:
+        raise NotFoundError(detail=f"license {license_id} not found")
+
+    master_row = get_master_license_summary(session, lic_row["master_license_id"])
+    licensee_row = get_licensee(session, master_row["entity_id"])
+    products_rows = get_license_products_all(session, license_id)
+    end_user_count = get_end_user_count(session, license_id)
+
+    return build_license(
+        lic_row,
+        master=row_to_master_license_summary(master_row),
+        licensee=row_to_licensee_summary(licensee_row),
+        products=[row_to_licensed_product(r) for r in products_rows],
+        end_user_count=end_user_count,
+    )
+
+
+@router.get("/{license_id}/products", response_model=Page[LicensedProduct])
+def get_license_products_route(
+    license_id: int, page: PageParams = Depends(), session: Session = Depends(get_session)
+):
+    rows, total = get_license_products_page(session, license_id, page)
+    items = [row_to_licensed_product(r) for r in rows]
+    return build_page(items, total, page)

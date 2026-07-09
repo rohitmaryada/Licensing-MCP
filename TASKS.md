@@ -47,9 +47,9 @@ MCP repoint is shared/whoever's free; Verify is joint.
 > - **Blocked on T2** (service contracts) before B1 — pin the endpoints/DTOs first.
 
 - [x] **B1 · Service scaffolding** — layout for 3 services, shared DB/pool module, health checks, `docker-compose` landscape · _M_ · dep: T2 → **DONE:** [services/](services/) — `shared/{config,db,auth,schemas,errors}.py`, one `main.py` per service (Licensing `:8001`, Entitlement `:8002`, Activation `:8003`), shared `Dockerfile` + standalone `services/docker-compose.yml`. All 6 acceptance checks pass (see [services/B1-SETUP.html](services/B1-SETUP.html)). Unblocks B2/B3/B4.
-- [ ] **B2 · Licensing service** — read + write endpoints · _M/L_ · dep: B1, A1
-- [ ] **B3 · Entitlement service** — endpoints · _M_ · dep: B1, A1
-- [ ] **B4 · Activation service** — endpoints (revoke/reset writes) · _M_ · dep: B1, A1
+- [ ] **B2 · Licensing service** — read + write endpoints · _M/L_ · dep: B1, A1 → **READS DONE** (writes pending): all 8 read endpoints (L2–L8, L6b) live and acceptance-tested against docker-compose, see [Licensing MCP vault]/B2-READS-PLAN.md.
+- [ ] **B3 · Entitlement service** — endpoints · _M_ · dep: B1, A1 → **READS DONE** (writes pending): E1 (enriched, w/ cross-service stale-activation lookup) + E2 live and acceptance-tested.
+- [ ] **B4 · Activation service** — endpoints (revoke/reset writes) · _M_ · dep: B1, A1 → internal-only read endpoint (`GET /activations`, consumed by E1) live; public writes still pending.
 - [ ] **B5 · Service-to-service auth** — token issuance + validation · _M_ · dep: B1
 
 ## Workstream C — MCP repoint (either; start on mocks after T2)

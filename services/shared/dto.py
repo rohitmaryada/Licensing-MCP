@@ -136,8 +136,13 @@ class Policy(CamelModel):
 
 class StaleActivation(CamelModel):
     id: int
+    entitlement_id: int
+    user_id: int
+    user_email: str
     machine_id: str
     machine_name: str | None = None
+    os: str | None = None
+    activation_date: date
     last_heartbeat: datetime
     days_since_heartbeat: int
     status: str
@@ -157,14 +162,71 @@ class EntitlementSummary(CamelModel):
     status: str
 
 
+class EntitlementPerson(CamelModel):
+    id: int
+    entitlement_id: int
+    user_id: int
+    user_email: str
+    role: str | None = None
+    added_date: date
+    status: str
+
+
 class Entitlement(EntitlementSummary):
     assignment_role: str | None = None
     assigned_date: date | None = None
     policy: Policy | None = None
     stale_activations: list[StaleActivation] = []
+    people: list[EntitlementPerson] | None = None
 
 
 class UserEntitlementsResponse(CamelModel):
     user: UserContext
     items: list[Entitlement]
     page_info: PageInfo
+
+
+# ── Writes slice (B2-WRITES-PLAN.md §6) ──────────────────────────────────────
+
+
+class UpdateSeatCountRequest(CamelModel):
+    seat_count: int
+
+
+class ExtendExpiryRequest(CamelModel):
+    expiry_date: date
+
+
+class AddEndUserRequest(CamelModel):
+    user_email: str
+
+
+class AddAdministratorRequest(CamelModel):
+    user_email: str
+    renewal_notifications: bool = False
+
+
+class ActivationActionRequest(CamelModel):
+    reason: str
+
+
+class EndUser(CamelModel):
+    id: int
+    license_id: int
+    user_id: int
+    user_email: str
+    added_date: date
+    status: str
+
+
+class ActivationState(CamelModel):
+    id: int
+    entitlement_id: int
+    user_id: int
+    user_email: str
+    machine_id: str
+    machine_name: str | None = None
+    os: str | None = None
+    activation_date: date
+    last_heartbeat: datetime
+    status: str

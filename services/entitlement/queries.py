@@ -71,6 +71,34 @@ def list_user_entitlements(session, user_id: int, status: str | None, page):
     return rows, total
 
 
+def get_entitlement_core(session, entitlement_id: int):
+    """Backs the single-entitlement GET. assignment_role/assigned_date are
+    per-user (entitlement_person) fields with no meaning outside a user
+    context, so they're left absent here — the route fills them as None."""
+    stmt = sa.select(*_entitlement_cols()).select_from(_entitlement_join()).where(
+        entitlement.c.id == entitlement_id
+    )
+    return session.execute(stmt).mappings().first()
+
+
+def list_entitlement_people(session, entitlement_id: int, page):
+    j = entitlement_person.join(app_user, app_user.c.id == entitlement_person.c.user_id)
+    conds = (entitlement_person.c.entitlement_id == entitlement_id,)
+    cols = [
+        entitlement_person.c.id,
+        entitlement_person.c.entitlement_id,
+        entitlement_person.c.user_id,
+        app_user.c.email.label("user_email"),
+        entitlement_person.c.role,
+        entitlement_person.c.added_date,
+        entitlement_person.c.status,
+    ]
+    stmt = sa.select(*cols).select_from(j).where(*conds).order_by(entitlement_person.c.id)
+    total = session.execute(sa.select(sa.func.count()).select_from(j).where(*conds)).scalar_one()
+    rows = session.execute(stmt.limit(page.size).offset(page.page * page.size)).mappings().all()
+    return rows, total
+
+
 def get_policy_for_entitlement(session, entitlement_id: int):
     stmt = sa.select(
         policy.c.id,

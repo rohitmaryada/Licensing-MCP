@@ -20,6 +20,11 @@ class Page(BaseModel, Generic[T]):
     pageInfo: PageInfo
 
 
+class Change(BaseModel, Generic[T]):
+    before: T
+    after: T
+
+
 class ErrorResponse(BaseModel):
     detail: str
     detailType: str

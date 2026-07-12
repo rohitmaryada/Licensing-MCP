@@ -1,6 +1,6 @@
-"""L4, L5, L6 — /licensing/v1/master-licenses/*"""
+"""L4, L5, L6, W4, W5 — /licensing/v1/master-licenses/*"""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from services.licensing.queries import (
@@ -10,9 +10,10 @@ from services.licensing.queries import (
     list_master_administrators,
     list_unallocated_products,
 )
+from services.licensing.write_queries import add_administrator, remove_administrator
 from services.shared.auth import require_service_auth
 from services.shared.db import get_session
-from services.shared.dto import Administrator, LicenseSummary, MasterLicense
+from services.shared.dto import AddAdministratorRequest, Administrator, LicenseSummary, MasterLicense
 from services.shared.errors import NotFoundError
 from services.shared.mappers import (
     row_to_administrator,
@@ -75,3 +76,21 @@ def list_licenses_by_master_route(
 @router.get("/{ml_id}/administrators", response_model=list[Administrator])
 def list_master_administrators_route(ml_id: int, session: Session = Depends(get_session)):
     return [row_to_administrator(r) for r in list_master_administrators(session, ml_id)]
+
+
+@router.post("/{ml_id}/administrators", response_model=Administrator)
+def add_administrator_route(
+    ml_id: int, body: AddAdministratorRequest, session: Session = Depends(get_session)
+):
+    row = add_administrator(session, ml_id, body.user_email, body.renewal_notifications)
+    session.commit()
+    return row_to_administrator(row)
+
+
+@router.delete("/{ml_id}/administrators/{user_id}", status_code=204)
+def remove_administrator_route(
+    ml_id: int, user_id: int, session: Session = Depends(get_session)
+):
+    remove_administrator(session, ml_id, user_id)
+    session.commit()
+    return Response(status_code=204)

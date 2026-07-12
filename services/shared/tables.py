@@ -4,11 +4,22 @@ Explicit Column defs, not reflection — no DB round-trip at import time, and
 each service only imports the tables it owns (§3 table ownership is enforced
 by which queries.py imports what, not by anything here). Enum columns come
 back as plain strings via psycopg, so Text is the right Core type for them.
+
+Writing to an enum column needs an explicit cast, though: Postgres won't
+implicitly coerce a VARCHAR bind param into an enum type on INSERT/UPDATE
+(unlike a bare string literal). The `*_enum` objects below are for casting
+values in `.values(...)` — `create_type=False` since the types already exist
+in the DB (created by db/schema.sql, not by this metadata).
 """
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM
 
 metadata = sa.MetaData()
+
+license_status_enum = ENUM(name="license_status", create_type=False)
+activation_status_enum = ENUM(name="activation_status", create_type=False)
+membership_status_enum = ENUM(name="membership_status", create_type=False)
 
 product = sa.Table(
     "product",

@@ -9,7 +9,10 @@ assemble a composite DTO from several already-mapped pieces.
 
 from services.shared.dto import (
     Administrator,
+    ActivationState,
+    EndUser,
     Entitlement,
+    EntitlementPerson,
     EntitlementSummary,
     License,
     LicenseSummary,
@@ -65,13 +68,19 @@ def row_to_entitlement_summary(row) -> EntitlementSummary:
     return EntitlementSummary(**row)
 
 
-def build_entitlement(row, policy_row, stale_rows) -> Entitlement:
+def row_to_entitlement_person(row) -> EntitlementPerson:
+    return EntitlementPerson(**row)
+
+
+def build_entitlement(row, policy_row, stale_rows, people_rows=None) -> Entitlement:
     """row: entitlement+license+master+product columns, aliased to Entitlement's
     flat fields. policy_row: one policy row or None. stale_rows: activation rows
-    (only passed when includeStaleActivations=true)."""
+    (only passed when includeStaleActivations=true). people_rows: entitlement_person
+    rows, only passed when include=people on the single-entitlement GET."""
     policy = Policy(**policy_row) if policy_row is not None else None
     stale = [row_to_stale_activation(r) for r in stale_rows]
-    return Entitlement(**row, policy=policy, stale_activations=stale)
+    people = [row_to_entitlement_person(r) for r in people_rows] if people_rows is not None else None
+    return Entitlement(**row, policy=policy, stale_activations=stale, people=people)
 
 
 def build_master_license(row, *, licenses=None, administrators=None, licensee=None, unallocated_products=None) -> MasterLicense:
@@ -82,6 +91,14 @@ def build_master_license(row, *, licenses=None, administrators=None, licensee=No
         licensee=licensee,
         unallocated_products=unallocated_products,
     )
+
+
+def row_to_end_user(row) -> EndUser:
+    return EndUser(**row)
+
+
+def row_to_activation_state(row) -> ActivationState:
+    return ActivationState(**row)
 
 
 def build_license(row, *, master, licensee, products, end_user_count) -> License:

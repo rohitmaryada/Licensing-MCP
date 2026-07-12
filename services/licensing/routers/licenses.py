@@ -1,4 +1,4 @@
-"""L6b, L7, L8 — /licensing/v1/licenses/*"""
+"""L6b, L7, L8, W2, W3 — /licensing/v1/licenses/*"""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -13,18 +13,29 @@ from services.licensing.queries import (
     get_master_license_summary,
     list_master_administrators,
 )
+from services.licensing.write_queries import add_user_to_license, extend_license_expiry
 from services.shared.auth import require_service_auth
 from services.shared.db import get_session
-from services.shared.dto import Administrator, License, LicensedProduct
+from services.shared.dto import (
+    Administrator,
+    AddEndUserRequest,
+    EndUser,
+    ExtendExpiryRequest,
+    License,
+    LicenseSummary,
+    LicensedProduct,
+)
 from services.shared.errors import NotFoundError
 from services.shared.mappers import (
     build_license,
     row_to_administrator,
+    row_to_end_user,
+    row_to_license_summary,
     row_to_licensed_product,
     row_to_licensee_summary,
     row_to_master_license_summary,
 )
-from services.shared.schemas import Page, PageParams, build_page
+from services.shared.schemas import Change, Page, PageParams, build_page
 
 router = APIRouter(prefix="/licensing/v1/licenses", dependencies=[Depends(require_service_auth)])
 
@@ -65,3 +76,23 @@ def get_license_products_route(
     rows, total = get_license_products_page(session, license_id, page)
     items = [row_to_licensed_product(r) for r in rows]
     return build_page(items, total, page)
+
+
+@router.patch("/{license_id}", response_model=Change[LicenseSummary])
+def extend_license_expiry_route(
+    license_id: int, body: ExtendExpiryRequest, session: Session = Depends(get_session)
+):
+    before, after = extend_license_expiry(session, license_id, body.expiry_date)
+    session.commit()
+    return Change[LicenseSummary](
+        before=row_to_license_summary(before), after=row_to_license_summary(after)
+    )
+
+
+@router.post("/{license_id}/end-users", response_model=EndUser)
+def add_end_user_route(
+    license_id: int, body: AddEndUserRequest, session: Session = Depends(get_session)
+):
+    row, _entitlement_count = add_user_to_license(session, license_id, body.user_email)
+    session.commit()
+    return row_to_end_user(row)

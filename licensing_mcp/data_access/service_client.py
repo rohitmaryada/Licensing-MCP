@@ -55,10 +55,10 @@ class ServiceClient:
         # (Only fires for genuinely-missing attributes; defined methods like
         # get_user_entitlements/close never reach here.)
         raise ValueError(
-            f"This tool isn't wired to the services backend yet — C1 repoint in "
-            f"progress (so far only check_user_entitlements is; the rest are "
-            f"blocked on a Licensing-service by-ref lookup). Tried '.{name}'. "
-            f"Use LICENSING_BACKEND=sqlite for this tool."
+            "This tool isn't wired to the services backend yet — C1 repoint is "
+            "in progress. Wired so far: find_user, check_user_entitlements, "
+            "get_license_status, get_license_products. The rest still use the "
+            "sqlite backend (set LICENSING_BACKEND=sqlite to use them now)."
         )
 
     def close(self):

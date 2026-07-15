@@ -133,6 +133,10 @@ def query_check_user_entitlements(user_email: str, session: Session) -> dict:
         GET /entitlement-service/v1/users/{email}/entitlements
         Headers: Authorization: Bearer {service_token}
     """
+    # C1: services backend — map the real Entitlement service response to this shape.
+    if hasattr(session, "get_user_entitlements"):
+        return _check_user_entitlements_via_services(session, user_email)
+
     user = session.query(User).filter(User.email == user_email).first()
     if not user:
         raise ValueError(f"User '{user_email}' not found.")
@@ -213,6 +217,60 @@ def query_check_user_entitlements(user_email: str, session: Session) -> dict:
         "last_name": user.last_name,
         "entity_name": user.entity.name,
         "total_entitlements": len(rows),
+        "licenses": list(license_map.values()),
+    }
+
+
+# ── C1 adapter: real Entitlement service → the flat check_user_entitlements shape
+#
+# Source: GET /entitlement/v1/users/{email}/entitlements?includeStaleActivations=true
+# (services/ENDPOINTS.md). Reconciliation decisions (flagged for review):
+#   * license_id  := licenseRef ("L-XXXXX", what the flat shape used)
+#   * license_type / license_status := None — the user-entitlements endpoint
+#     doesn't carry them (no deep equivalent for license_type; license status
+#     isn't returned on this route)
+#   * activation_state := "inactive" if the entitlement has stale activations,
+#     else "active". NOTE: this endpoint returns only STALE activations (its
+#     Story-2 purpose), so "never_activated" and non-stale "active" details
+#     aren't distinguishable here without an Activation-service fan-out. The
+#     stale ones — the ones that matter for diagnosis — are surfaced faithfully.
+def _check_user_entitlements_via_services(client, user_email: str) -> dict:
+    resp = client.get_user_entitlements(user_email, include_stale=True)
+    user = resp["user"]
+
+    license_map: dict[str, dict] = {}
+    for item in resp.get("items", []):
+        ref = item["licenseRef"]
+        if ref not in license_map:
+            license_map[ref] = {
+                "license_id": ref,
+                "license_type": None,
+                "license_status": None,
+                "entitlements": [],
+            }
+        stale = item.get("staleActivations") or []
+        license_map[ref]["entitlements"].append({
+            "product_name": item["productName"],
+            "product_code": item["productCode"],
+            "entitlement_status": item["status"],
+            "activation_state": "inactive" if stale else "active",
+            "activations": [
+                {
+                    "machine_id": a["machineId"],
+                    "status": a["status"],
+                    "last_heartbeat": a["lastHeartbeat"],
+                    "days_since_heartbeat": a["daysSinceHeartbeat"],
+                }
+                for a in stale
+            ],
+        })
+
+    return {
+        "user_email": user["email"],
+        "first_name": user["firstName"],
+        "last_name": user["lastName"],
+        "entity_name": user["entityName"],
+        "total_entitlements": resp["pageInfo"]["totalElements"],
         "licenses": list(license_map.values()),
     }
 

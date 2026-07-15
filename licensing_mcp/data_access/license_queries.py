@@ -85,6 +85,9 @@ def query_license_status(license_id: str, session: Session) -> dict:
         GET /licensing-service/v1/licenses/{license_id}
         Headers: Authorization: Bearer {service_token}
     """
+    if hasattr(session, "get_license_by_ref"):
+        return _license_status_via_services(session, license_id)
+
     license = (
         session.query(License)
         .join(Entity, License.entity_id == Entity.id)
@@ -112,6 +115,54 @@ def query_license_status(license_id: str, session: Session) -> dict:
         "expiry_date": license.expiry_date.isoformat(),
         "days_until_expiry": _days_until(license.expiry_date),
     }
+
+
+# ── C1 adapters: real Licensing service (address-by-ref) → flat tool shapes ──
+#
+# Both get_license_status and get_license_products are served by ONE composite:
+#   GET /licensing/v1/licenses?ref={ref}  (ref = business key; surrogate id stays
+#   internal). Reconciliation decisions (flagged): license-level seat_count :=
+#   SUM of per-product seatCount; seats_used := endUserCount; license_type := None
+#   (no deep equivalent); product category/base_price := None (not on the service
+#   DTO). These are the same flat/deep reconciliations documented in CONTRACTS §8.
+def _flat_license_fields(comp: dict) -> dict:
+    seat_count = sum(p.get("seatCount", 0) for p in comp.get("products", []))
+    seats_used = comp.get("endUserCount", 0)
+    return {
+        "license_id": comp["licenseRef"],
+        "entity_name": (comp.get("licensee") or {}).get("name"),
+        "entity_type": (comp.get("licensee") or {}).get("entityType"),
+        "license_type": None,
+        "status": comp["status"],
+        "seat_count": seat_count,
+        "seats_used": seats_used,
+        "seat_utilization": f"{seats_used}/{seat_count}",
+        "utilization_pct": round((seats_used / seat_count * 100) if seat_count else 0),
+        "start_date": comp.get("startDate"),
+        "expiry_date": comp["expiryDate"],
+        "days_until_expiry": comp["daysUntilExpiry"],
+    }
+
+
+def _license_status_via_services(client, license_ref: str) -> dict:
+    return _flat_license_fields(client.get_license_by_ref(license_ref))
+
+
+def _license_products_via_services(client, license_ref: str) -> dict:
+    comp = client.get_license_by_ref(license_ref)
+    result = _flat_license_fields(comp)
+    products = comp.get("products", [])
+    result["product_count"] = len(products)
+    result["products"] = [
+        {
+            "name": p["productName"],
+            "product_code": p["productCode"],
+            "category": None,          # not carried on the service LicensedProduct DTO
+            "base_price_usd": None,
+        }
+        for p in sorted(products, key=lambda p: p["productName"])
+    ]
+    return result
 
 
 # ── Tool: check_user_entitlements ────────────────────────────────────────────
@@ -378,6 +429,9 @@ def query_license_products(license_id: str, session: Session) -> dict:
         GET /licensing-service/v1/licenses/{license_id}/products
         Headers: Authorization: Bearer {service_token}
     """
+    if hasattr(session, "get_license_by_ref"):
+        return _license_products_via_services(session, license_id)
+
     # Single query with eager joins — avoids N+1 queries
     license = (
         session.query(License)

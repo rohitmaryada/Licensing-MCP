@@ -199,6 +199,14 @@ Convenience: resolves `license → master_license_id → admins` server-side.
 
 ---
 
+#### `GET /licenses?ref={license_ref}`
+Address a license by its **public business key** (`license_ref`, e.g.
+`L-DEMOACME`) instead of the internal surrogate id — so ref-based callers (the
+MCP tools) never handle surrogate keys. Resolves `ref → id` server-side and
+returns the same composite `License` as the id route below. `404` if the ref
+isn't found. (Design: ref is the stable public identifier; the integer id stays
+internal to joins and cross-service calls.)
+
 #### `GET /licenses/{license_id}`
 The full license snapshot — master + licensee + products + end-user count,
 assembled in one response.
@@ -570,7 +578,8 @@ in it aren't built yet:
 
 | Not built | Contract said | Notes |
 |---|---|---|
-| `GET /entities/search?name=` | backs `search_entitlements` | Parked — needs an indexing decision (trigram vs. denormalized search table); only `entity.name` has an index today |
+| `GET /entities/search?name=` | backs `search_entitlements` + `list_licenses_by_entity` | **Still needed** — the two entity-name tools are blocked on it. Do it right: `pg_trgm` GIN index for fuzzy/substring search. |
+| ~~license ref→id resolution~~ | — | **DONE** — `GET /licenses?ref=` addresses licenses by business key (see Licensing reads). Unblocked get_license_status / get_license_products (repointed). Remaining license-keyed writes/admins repoint next. |
 | `GET /entities/{id}/master-licenses` (flat `Page<MasterLicenseSummary>`) | — | As-built takes a different shape: `/licensees/{id}/licenses`, grouped by master license |
 | `GET /licenses/{id}/end-users` | seat membership list | Not exposed as its own endpoint — only a count (`endUserCount`) is embedded in `License` |
 | Any Entitlement-service write | — | Parked per CONTRACTS §8 — no MCP tool needs one yet |

@@ -47,6 +47,20 @@ class ServiceClient:
     def __init__(self, timeout: float = 15.0):
         self._http = httpx.Client(timeout=timeout, headers=_auth_headers())
 
+    def __getattr__(self, name: str):
+        # A query_* function not yet repointed (C1 in progress) is using this
+        # handle as if it were a SQLAlchemy Session (e.g. `.query`, `.execute`).
+        # Raise a CLEAR ValueError — the tool layer turns it into a readable
+        # {"error": ...} instead of the opaque "an unexpected error occurred".
+        # (Only fires for genuinely-missing attributes; defined methods like
+        # get_user_entitlements/close never reach here.)
+        raise ValueError(
+            f"This tool isn't wired to the services backend yet — C1 repoint in "
+            f"progress (so far only check_user_entitlements is; the rest are "
+            f"blocked on a Licensing-service by-ref lookup). Tried '.{name}'. "
+            f"Use LICENSING_BACKEND=sqlite for this tool."
+        )
+
     def close(self):
         self._http.close()
 
@@ -66,6 +80,16 @@ class ServiceClient:
         if resp.status_code >= 400:
             raise ServiceError(f"{resp.status_code} from {url}: {resp.text[:200]}")
         return resp.json()
+
+    # ── Licensing service ────────────────────────────────────────────────────
+    def get_license_by_ref(self, license_ref: str) -> dict:
+        """Address a license by its public ref (business key). Returns the full
+        composite (status, dates, products[], master, licensee, endUserCount)."""
+        return self._get(
+            f"{LICENSING_URL}/licensing/v1/licenses",
+            f"License '{license_ref}' not found.",
+            params={"ref": license_ref},
+        )
 
     # ── Entitlement service ──────────────────────────────────────────────────
     def get_user_entitlements(self, email: str, include_stale: bool = True) -> dict:

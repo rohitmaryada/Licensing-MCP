@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from services.licensing.queries import (
     get_end_user_count,
     get_license_core,
+    get_license_id_by_ref,
     get_license_products_all,
     get_license_products_page,
     get_licensee,
@@ -49,8 +50,9 @@ def get_license_administrators_route(license_id: int, session: Session = Depends
     return [row_to_administrator(r) for r in list_master_administrators(session, ml_id)]
 
 
-@router.get("/{license_id}", response_model=License)
-def get_license_status_route(license_id: int, session: Session = Depends(get_session)):
+def _license_composite(session, license_id: int) -> License:
+    """Assemble the full License snapshot (master + licensee + products + end-user
+    count). Shared by the id route and the ref-addressable route below."""
     lic_row = get_license_core(session, license_id)
     if lic_row is None:
         raise NotFoundError(detail=f"license {license_id} not found")
@@ -67,6 +69,22 @@ def get_license_status_route(license_id: int, session: Session = Depends(get_ses
         products=[row_to_licensed_product(r) for r in products_rows],
         end_user_count=end_user_count,
     )
+
+
+@router.get("", response_model=License)
+def get_license_by_ref_route(ref: str, session: Session = Depends(get_session)):
+    """Address a license by its public business key (license_ref, e.g. 'L-DEMOACME')
+    rather than the internal surrogate id — so ref-based callers (the MCP tools)
+    never handle surrogate keys. Returns the same composite as GET /licenses/{id}."""
+    license_id = get_license_id_by_ref(session, ref)
+    if license_id is None:
+        raise NotFoundError(detail=f"license ref '{ref}' not found")
+    return _license_composite(session, license_id)
+
+
+@router.get("/{license_id}", response_model=License)
+def get_license_status_route(license_id: int, session: Session = Depends(get_session)):
+    return _license_composite(session, license_id)
 
 
 @router.get("/{license_id}/products", response_model=Page[LicensedProduct])

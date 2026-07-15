@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from licensing_mcp.models import (
@@ -85,6 +85,9 @@ def query_license_status(license_id: str, session: Session) -> dict:
         GET /licensing-service/v1/licenses/{license_id}
         Headers: Authorization: Bearer {service_token}
     """
+    if hasattr(session, "get_license_by_ref"):
+        return _license_status_via_services(session, license_id)
+
     license = (
         session.query(License)
         .join(Entity, License.entity_id == Entity.id)
@@ -114,6 +117,114 @@ def query_license_status(license_id: str, session: Session) -> dict:
     }
 
 
+# ── C1 adapters: real Licensing service (address-by-ref) → flat tool shapes ──
+#
+# Both get_license_status and get_license_products are served by ONE composite:
+#   GET /licensing/v1/licenses?ref={ref}  (ref = business key; surrogate id stays
+#   internal). Reconciliation decisions (flagged): license-level seat_count :=
+#   SUM of per-product seatCount; seats_used := endUserCount; license_type := None
+#   (no deep equivalent); product category/base_price := None (not on the service
+#   DTO). These are the same flat/deep reconciliations documented in CONTRACTS §8.
+def _flat_license_fields(comp: dict) -> dict:
+    seat_count = sum(p.get("seatCount", 0) for p in comp.get("products", []))
+    seats_used = comp.get("endUserCount", 0)
+    return {
+        "license_id": comp["licenseRef"],
+        "entity_name": (comp.get("licensee") or {}).get("name"),
+        "entity_type": (comp.get("licensee") or {}).get("entityType"),
+        "license_type": None,
+        "status": comp["status"],
+        "seat_count": seat_count,
+        "seats_used": seats_used,
+        "seat_utilization": f"{seats_used}/{seat_count}",
+        "utilization_pct": round((seats_used / seat_count * 100) if seat_count else 0),
+        "start_date": comp.get("startDate"),
+        "expiry_date": comp["expiryDate"],
+        "days_until_expiry": comp["daysUntilExpiry"],
+    }
+
+
+def _license_status_via_services(client, license_ref: str) -> dict:
+    return _flat_license_fields(client.get_license_by_ref(license_ref))
+
+
+def _license_products_via_services(client, license_ref: str) -> dict:
+    comp = client.get_license_by_ref(license_ref)
+    result = _flat_license_fields(comp)
+    products = comp.get("products", [])
+    result["product_count"] = len(products)
+    result["products"] = [
+        {
+            "name": p["productName"],
+            "product_code": p["productCode"],
+            "category": None,          # not carried on the service LicensedProduct DTO
+            "base_price_usd": None,
+        }
+        for p in sorted(products, key=lambda p: p["productName"])
+    ]
+    return result
+
+
+# ── Tool: find_user ──────────────────────────────────────────────────────────
+
+_USER_CAP = 20  # max matches returned before asking the caller to narrow
+
+
+def query_find_users(name: str, session, company: str | None = None) -> dict:
+    """
+    Find users by full/partial name or partial email, with their company, so a
+    caller who only has a name can identify the right person before pulling
+    entitlements. Names are ambiguous at scale, so we cap and flag truncation;
+    optional `company` narrows common names.
+
+    Production equivalent:
+        GET /entitlement-service/v1/users?name={name}&company={company}
+    """
+    if hasattr(session, "search_users"):
+        resp = session.search_users(name, company=company, size=_USER_CAP)
+        items = resp.get("items", [])
+        total = resp["pageInfo"]["totalElements"]
+        matches = [
+            {"email": u["email"], "first_name": u["firstName"],
+             "last_name": u["lastName"], "entity_name": u["entityName"]}
+            for u in items
+        ]
+    else:
+        like = f"%{name}%"
+        conds = or_(
+            (User.first_name + " " + User.last_name).ilike(like),
+            User.email.ilike(like),
+        )
+        q = session.query(User).join(Entity, User.entity_id == Entity.id).filter(conds)
+        if company:
+            q = q.filter(Entity.name.ilike(f"%{company}%"))
+        rows = q.order_by(User.last_name, User.first_name).limit(_USER_CAP + 1).all()
+        total = len(rows)
+        matches = [
+            {"email": u.email, "first_name": u.first_name,
+             "last_name": u.last_name, "entity_name": u.entity.name}
+            for u in rows[:_USER_CAP]
+        ]
+
+    returned = len(matches)
+    truncated = total > returned
+    result = {
+        "query": name,
+        "match_count": total,
+        "returned": returned,
+        "truncated": truncated,
+        "matches": matches,
+    }
+    if returned == 0:
+        result["message"] = f"No users matched '{name}'. Check the spelling or try just the last name."
+    elif truncated:
+        result["message"] = (
+            f"Matched {total} users — showing the first {returned}. "
+            f"Narrow with the full name or the person's company to identify the right one."
+        )
+    return result
+
+
 # ── Tool: check_user_entitlements ────────────────────────────────────────────
 
 def query_check_user_entitlements(user_email: str, session: Session) -> dict:
@@ -133,6 +244,10 @@ def query_check_user_entitlements(user_email: str, session: Session) -> dict:
         GET /entitlement-service/v1/users/{email}/entitlements
         Headers: Authorization: Bearer {service_token}
     """
+    # C1: services backend — map the real Entitlement service response to this shape.
+    if hasattr(session, "get_user_entitlements"):
+        return _check_user_entitlements_via_services(session, user_email)
+
     user = session.query(User).filter(User.email == user_email).first()
     if not user:
         raise ValueError(f"User '{user_email}' not found.")
@@ -213,6 +328,60 @@ def query_check_user_entitlements(user_email: str, session: Session) -> dict:
         "last_name": user.last_name,
         "entity_name": user.entity.name,
         "total_entitlements": len(rows),
+        "licenses": list(license_map.values()),
+    }
+
+
+# ── C1 adapter: real Entitlement service → the flat check_user_entitlements shape
+#
+# Source: GET /entitlement/v1/users/{email}/entitlements?includeStaleActivations=true
+# (services/ENDPOINTS.md). Reconciliation decisions (flagged for review):
+#   * license_id  := licenseRef ("L-XXXXX", what the flat shape used)
+#   * license_type / license_status := None — the user-entitlements endpoint
+#     doesn't carry them (no deep equivalent for license_type; license status
+#     isn't returned on this route)
+#   * activation_state := "inactive" if the entitlement has stale activations,
+#     else "active". NOTE: this endpoint returns only STALE activations (its
+#     Story-2 purpose), so "never_activated" and non-stale "active" details
+#     aren't distinguishable here without an Activation-service fan-out. The
+#     stale ones — the ones that matter for diagnosis — are surfaced faithfully.
+def _check_user_entitlements_via_services(client, user_email: str) -> dict:
+    resp = client.get_user_entitlements(user_email, include_stale=True)
+    user = resp["user"]
+
+    license_map: dict[str, dict] = {}
+    for item in resp.get("items", []):
+        ref = item["licenseRef"]
+        if ref not in license_map:
+            license_map[ref] = {
+                "license_id": ref,
+                "license_type": None,
+                "license_status": None,
+                "entitlements": [],
+            }
+        stale = item.get("staleActivations") or []
+        license_map[ref]["entitlements"].append({
+            "product_name": item["productName"],
+            "product_code": item["productCode"],
+            "entitlement_status": item["status"],
+            "activation_state": "inactive" if stale else "active",
+            "activations": [
+                {
+                    "machine_id": a["machineId"],
+                    "status": a["status"],
+                    "last_heartbeat": a["lastHeartbeat"],
+                    "days_since_heartbeat": a["daysSinceHeartbeat"],
+                }
+                for a in stale
+            ],
+        })
+
+    return {
+        "user_email": user["email"],
+        "first_name": user["firstName"],
+        "last_name": user["lastName"],
+        "entity_name": user["entityName"],
+        "total_entitlements": resp["pageInfo"]["totalElements"],
         "licenses": list(license_map.values()),
     }
 
@@ -320,6 +489,9 @@ def query_license_products(license_id: str, session: Session) -> dict:
         GET /licensing-service/v1/licenses/{license_id}/products
         Headers: Authorization: Bearer {service_token}
     """
+    if hasattr(session, "get_license_by_ref"):
+        return _license_products_via_services(session, license_id)
+
     # Single query with eager joins — avoids N+1 queries
     license = (
         session.query(License)

@@ -98,6 +98,12 @@ CREATE TABLE app_user (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ix_app_user_entity ON app_user (entity_id);
+-- Fuzzy name/email search for the find_user tool. pg_trgm GIN indexes make
+-- substring ILIKE ('%jane doe%') an index scan, not a seq scan, at 1.5M+ users —
+-- the standard Postgres way to do human-name lookup at scale.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX ix_app_user_name_trgm  ON app_user USING gin ((first_name || ' ' || last_name) gin_trgm_ops);
+CREATE INDEX ix_app_user_email_trgm ON app_user USING gin (email gin_trgm_ops);
 
 -- ── Tier 2: master license — umbrella per customer ───────────────────────────
 CREATE TABLE master_license (

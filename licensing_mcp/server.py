@@ -20,6 +20,7 @@ from licensing_mcp.tools import search_entitlements         # noqa: F401
 from licensing_mcp.tools import get_license_status          # noqa: F401
 from licensing_mcp.tools import check_user_entitlements     # noqa: F401
 from licensing_mcp.tools import list_licenses_by_entity     # noqa: F401
+from licensing_mcp.tools import find_user                   # noqa: F401
 
 # CS write surface (Week 3) — all gated by role via cs_executor
 from licensing_mcp.tools import add_user_to_license         # noqa: F401

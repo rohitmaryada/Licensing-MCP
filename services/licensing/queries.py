@@ -137,6 +137,15 @@ def get_master_license_id_for_license(session, license_id: int):
     return row[0] if row else None
 
 
+def get_license_id_by_ref(session, license_ref: str):
+    """Resolve a public license ref (business key, e.g. 'L-DEMOACME') to the
+    internal surrogate id. The ref is the stable public identifier callers use;
+    the integer id stays internal to joins and cross-service calls."""
+    stmt = sa.select(license.c.id).where(license.c.license_ref == license_ref)
+    row = session.execute(stmt).first()
+    return row[0] if row else None
+
+
 def get_license_core(session, license_id: int):
     """L7's own license fields (master/licensee/products assembled separately)."""
     stmt = sa.select(

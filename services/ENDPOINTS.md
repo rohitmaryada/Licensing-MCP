@@ -403,6 +403,14 @@ Who's assigned to this entitlement (`entitlement_person`), paginated.
 
 ---
 
+#### `GET /users?name={q}&company={c}&page=&size=`
+Find users by **name or partial email** (the `find_user` tool) — the front door
+when a rep has only a person's name. Backed by `pg_trgm` GIN indexes on
+`app_user`, ordered by name similarity. Optional `company` narrows by entity name
+(the standard way to disambiguate common names). Returns `Page<UserContext>`
+(`id, email, firstName, lastName, entityId, entityName`) — an empty result is a
+normal `200` with `items: []`, not a `404`.
+
 #### `GET /users/{email}/entitlements?status=&includeStaleActivations=&page=&size=`
 Everything a user is entitled to, resolved through `entitlement_person` —
 enriched with each entitlement's policy and, optionally, its stale

@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from licensing_mcp.models import (
@@ -162,6 +162,66 @@ def _license_products_via_services(client, license_ref: str) -> dict:
         }
         for p in sorted(products, key=lambda p: p["productName"])
     ]
+    return result
+
+
+# ── Tool: find_user ──────────────────────────────────────────────────────────
+
+_USER_CAP = 20  # max matches returned before asking the caller to narrow
+
+
+def query_find_users(name: str, session, company: str | None = None) -> dict:
+    """
+    Find users by full/partial name or partial email, with their company, so a
+    caller who only has a name can identify the right person before pulling
+    entitlements. Names are ambiguous at scale, so we cap and flag truncation;
+    optional `company` narrows common names.
+
+    Production equivalent:
+        GET /entitlement-service/v1/users?name={name}&company={company}
+    """
+    if hasattr(session, "search_users"):
+        resp = session.search_users(name, company=company, size=_USER_CAP)
+        items = resp.get("items", [])
+        total = resp["pageInfo"]["totalElements"]
+        matches = [
+            {"email": u["email"], "first_name": u["firstName"],
+             "last_name": u["lastName"], "entity_name": u["entityName"]}
+            for u in items
+        ]
+    else:
+        like = f"%{name}%"
+        conds = or_(
+            (User.first_name + " " + User.last_name).ilike(like),
+            User.email.ilike(like),
+        )
+        q = session.query(User).join(Entity, User.entity_id == Entity.id).filter(conds)
+        if company:
+            q = q.filter(Entity.name.ilike(f"%{company}%"))
+        rows = q.order_by(User.last_name, User.first_name).limit(_USER_CAP + 1).all()
+        total = len(rows)
+        matches = [
+            {"email": u.email, "first_name": u.first_name,
+             "last_name": u.last_name, "entity_name": u.entity.name}
+            for u in rows[:_USER_CAP]
+        ]
+
+    returned = len(matches)
+    truncated = total > returned
+    result = {
+        "query": name,
+        "match_count": total,
+        "returned": returned,
+        "truncated": truncated,
+        "matches": matches,
+    }
+    if returned == 0:
+        result["message"] = f"No users matched '{name}'. Check the spelling or try just the last name."
+    elif truncated:
+        result["message"] = (
+            f"Matched {total} users — showing the first {returned}. "
+            f"Narrow with the full name or the person's company to identify the right one."
+        )
     return result
 
 

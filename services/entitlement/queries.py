@@ -27,6 +27,37 @@ def get_user_context(session, email: str):
     return session.execute(stmt).mappings().first()
 
 
+def search_users(session, q: str, page, company: str | None = None):
+    """find_user — fuzzy search users by name OR email, joined to entity for
+    disambiguation (email + company). Substring ILIKE is served by the pg_trgm
+    GIN indexes on app_user; results ordered by name similarity to the query.
+    Optional `company` narrows by the user's entity name — the standard way to
+    disambiguate common names."""
+    full_name = app_user.c.first_name + " " + app_user.c.last_name
+    pattern = f"%{q}%"
+    conds = sa.or_(full_name.ilike(pattern), app_user.c.email.ilike(pattern))
+    if company:
+        conds = sa.and_(conds, entity.c.name.ilike(f"%{company}%"))
+    j = app_user.join(entity, entity.c.id == app_user.c.entity_id)
+    cols = [
+        app_user.c.id,
+        app_user.c.email,
+        app_user.c.first_name,
+        app_user.c.last_name,
+        app_user.c.entity_id,
+        entity.c.name.label("entity_name"),
+    ]
+    stmt = (
+        sa.select(*cols)
+        .select_from(j)
+        .where(conds)
+        .order_by(sa.func.similarity(full_name, q).desc(), app_user.c.id)
+    )
+    total = session.execute(sa.select(sa.func.count()).select_from(j).where(conds)).scalar_one()
+    rows = session.execute(stmt.limit(page.size).offset(page.page * page.size)).mappings().all()
+    return rows, total
+
+
 def _entitlement_cols():
     return [
         entitlement.c.id,

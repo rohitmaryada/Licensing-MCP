@@ -9,11 +9,19 @@ from services.entitlement.queries import (
     list_entitlement_people,
     list_entitlements,
     list_user_entitlements,
+    search_users,
 )
 from services.shared.auth import require_service_auth
 from services.shared.clients import activation_client
 from services.shared.db import check_db_ready, get_session
-from services.shared.dto import Entitlement, EntitlementPerson, EntitlementSummary, Policy, UserEntitlementsResponse
+from services.shared.dto import (
+    Entitlement,
+    EntitlementPerson,
+    EntitlementSummary,
+    Policy,
+    UserContext,
+    UserEntitlementsResponse,
+)
 from services.shared.errors import BadRequestError, NotFoundError, register_error_handlers
 from services.shared.mappers import (
     build_entitlement,
@@ -57,6 +65,21 @@ def check_user_entitlements(
     return UserEntitlementsResponse(
         user=row_to_user_context(user_row), items=page_wrapper.items, page_info=page_wrapper.pageInfo
     )
+
+
+@router.get("/users", response_model=Page[UserContext])
+def find_users_route(
+    name: str = Query(..., min_length=2, description="name or email substring to search for"),
+    company: str | None = Query(default=None, description="optional: narrow by the user's company"),
+    page: PageParams = Depends(),
+    session: Session = Depends(get_session),
+):
+    """find_user — resolve a person's name (or partial email) to matching users,
+    with their company, so a caller who only has a name can disambiguate before
+    looking up entitlements. Optional `company` narrows common names."""
+    rows, total = search_users(session, name, page, company=company)
+    items = [row_to_user_context(r) for r in rows]
+    return build_page(items, total, page)
 
 
 @router.get("/entitlements", response_model=Page[EntitlementSummary])

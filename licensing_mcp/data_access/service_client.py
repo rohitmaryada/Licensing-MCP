@@ -92,6 +92,18 @@ class ServiceClient:
         )
 
     # ── Entitlement service ──────────────────────────────────────────────────
+    def search_users(self, name: str, company: str | None = None, size: int = 20) -> dict:
+        """find_user — fuzzy user search by name or email, optionally narrowed by
+        company. Empty result is a normal 200 with items=[], not a 404."""
+        params = {"name": name, "size": size}
+        if company:
+            params["company"] = company
+        return self._get(
+            f"{ENTITLEMENT_URL}/entitlement/v1/users",
+            f"User search '{name}' failed.",
+            params=params,
+        )
+
     def get_user_entitlements(self, email: str, include_stale: bool = True) -> dict:
         return self._get(
             f"{ENTITLEMENT_URL}/entitlement/v1/users/{email}/entitlements",

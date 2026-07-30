@@ -524,8 +524,10 @@ def plant_demo(conn):
     conn.execute(
         "INSERT INTO activation (entitlement_id, user_id, machine_id, machine_name, os, "
         "activation_date, last_heartbeat, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        # status 'active' (still holding the slot) but a long-stale heartbeat — the
+        # realistic Story-2 setup: revoke flips it active -> inactive, freeing the slot.
         (simulink_ent_id, jane_id, "MAC-OLD-7291", "Janes-MacBook-Pro", "macOS 15",
-         (last_heartbeat - timedelta(days=45)).date(), last_heartbeat, "inactive"),
+         (last_heartbeat - timedelta(days=45)).date(), last_heartbeat, "active"),
     )
 
     # Fill license_end_user to 10/10 on MATLAB's seat_count (all 10 seat-holders; admin excluded).

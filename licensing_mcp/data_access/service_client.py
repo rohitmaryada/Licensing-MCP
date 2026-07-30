@@ -44,6 +44,11 @@ class ServiceClient:
     same lifecycle the tool layer uses (`.close()`, context manager).
     """
 
+    # Defined class attribute → lets callers detect the services backend via
+    # getattr(handle, "backend", "sqlite") WITHOUT tripping __getattr__ below
+    # (which only fires for *missing* attributes).
+    backend = "services"
+
     def __init__(self, timeout: float = 15.0):
         self._http = httpx.Client(timeout=timeout, headers=_auth_headers())
 
@@ -109,4 +114,53 @@ class ServiceClient:
             f"{ENTITLEMENT_URL}/entitlement/v1/users/{email}/entitlements",
             f"User '{email}' not found.",
             params={"includeStaleActivations": str(include_stale).lower(), "size": 100},
+        )
+
+    def get_entitlement(self, entitlement_id: int) -> dict:
+        return self._get(
+            f"{ENTITLEMENT_URL}/entitlement/v1/entitlements/{entitlement_id}",
+            f"Entitlement {entitlement_id} not found.",
+        )
+
+    # ── Activation service ───────────────────────────────────────────────────
+    def get_user_activations(self, email: str) -> dict:
+        return self._get(
+            f"{ACTIVATION_URL}/activation/v1/activations",
+            f"No activations found for '{email}'.",
+            params={"userEmail": email, "size": 100},
+        )
+
+    def _post(self, url: str, body: dict, not_found_msg: str):
+        try:
+            resp = self._http.post(url, json=body)
+        except httpx.HTTPError as e:
+            raise ServiceError(str(e)) from e
+        if resp.status_code == 404:
+            raise ValueError(not_found_msg)
+        if resp.status_code == 409:
+            # business-rule violation — surface the service's detail to the tool layer
+            try:
+                raise ValueError(resp.json().get("detail", "conflict"))
+            except ValueError:
+                raise
+            except Exception:
+                raise ValueError("conflict")
+        if resp.status_code >= 400:
+            raise ServiceError(f"{resp.status_code} from {url}: {resp.text[:200]}")
+        return resp.json()
+
+    def revoke_activation(self, activation_id: int, reason: str) -> dict:
+        """POST /activations/{id}/revoke → Change<ActivationState> {before, after}."""
+        return self._post(
+            f"{ACTIVATION_URL}/activation/v1/activations/{activation_id}/revoke",
+            {"reason": reason},
+            f"Activation {activation_id} not found.",
+        )
+
+    def reset_activation(self, activation_id: int, reason: str) -> dict:
+        """POST /activations/{id}/reset → Change<ActivationState> {before, after}."""
+        return self._post(
+            f"{ACTIVATION_URL}/activation/v1/activations/{activation_id}/reset",
+            {"reason": reason},
+            f"Activation {activation_id} not found.",
         )

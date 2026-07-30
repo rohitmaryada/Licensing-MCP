@@ -23,7 +23,7 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from licensing_mcp.data_access.audit import write_audit
-from licensing_mcp.database import get_session
+from licensing_mcp.database import get_cs_session, get_session
 from licensing_mcp.identity import (
     IdentityError,
     has_permission,
@@ -57,25 +57,35 @@ def execute_cs_write(
             )
         }
 
-    session = get_session()
+    # The DATA mutation runs against whatever backend is configured (a SQLite
+    # Session, or a ServiceClient making HTTP calls). Identity/gate/audit ALWAYS
+    # run on the SQLite CS store (cs_* tables are MCP-owned, not in the services).
+    data_backend = get_session()
+    services_mode = getattr(data_backend, "backend", "sqlite") == "services"
+    # sqlite mode: reuse the single session for mutation + audit (one atomic txn,
+    # as before). services mode: a separate SQLite session for gate/audit while
+    # the mutation is an HTTP call — mutate-then-audit (NOT one transaction; a POC
+    # relaxation, prod would use a dedicated audit service / outbox).
+    cs_session = get_cs_session() if services_mode else data_backend
+
     try:
         # ── 1. Identity ───────────────────────────────────────────────────
         try:
-            actor = resolve_actor(session)
+            actor = resolve_actor(cs_session)
         except IdentityError as e:
             return {"error": str(e)}
 
         # ── 2. Permission gate ────────────────────────────────────────────
-        if not has_permission(session, actor, tool_name):
-            required = minimum_role_for(session, tool_name)
+        if not has_permission(cs_session, actor, tool_name):
+            required = minimum_role_for(cs_session, tool_name)
             audit_id = write_audit(
-                session, actor, tool_name, reason, outcome="rejected",
+                cs_session, actor, tool_name, reason, outcome="rejected",
                 target_license_id=target_license_id,
                 target_user_email=target_user_email,
                 target_product_name=target_product_name,
                 args=args,
             )
-            session.commit()  # the rejection record IS the transaction
+            cs_session.commit()  # the rejection record IS the transaction (no mutation ran)
             return {
                 "error": (
                     f"Permission denied: {actor['email']} holds role "
@@ -86,23 +96,26 @@ def execute_cs_write(
                 "audit_id": audit_id,
             }
 
-        # ── 3. Mutation ───────────────────────────────────────────────────
+        # ── 3. Mutation (backend-dependent: SQL or HTTP) ──────────────────
         try:
-            before, after, result = mutate(session)
+            before, after, result = mutate(data_backend)
         except ValueError as e:
             audit_id = write_audit(
-                session, actor, tool_name, reason, outcome="failure",
+                cs_session, actor, tool_name, reason, outcome="failure",
                 target_license_id=target_license_id,
                 target_user_email=target_user_email,
                 target_product_name=target_product_name,
                 args=args,
             )
-            session.commit()
+            cs_session.commit()
             return {"error": str(e), "audit_id": audit_id}
 
-        # ── 4. Audit + 5. Atomic commit ───────────────────────────────────
+        # ── 4. Audit + 5. Commit ──────────────────────────────────────────
+        # sqlite mode: this commit covers mutation + audit atomically.
+        # services mode: the mutation already committed service-side; this commits
+        # the audit record (mutate-then-audit).
         audit_id = write_audit(
-            session, actor, tool_name, reason, outcome="success",
+            cs_session, actor, tool_name, reason, outcome="success",
             target_license_id=result.get("license_id", target_license_id),
             target_user_email=target_user_email,
             target_product_name=target_product_name,
@@ -110,7 +123,7 @@ def execute_cs_write(
             before_state=before,
             after_state=after,
         )
-        session.commit()
+        cs_session.commit()
 
         return {
             **result,
@@ -121,7 +134,9 @@ def execute_cs_write(
         }
 
     except Exception:
-        session.rollback()
+        cs_session.rollback()  # rolls back audit (SQLite); an HTTP mutation cannot be undone
         return {"error": f"An unexpected error occurred executing {tool_name}."}
     finally:
-        session.close()
+        cs_session.close()
+        if data_backend is not cs_session:
+            data_backend.close()

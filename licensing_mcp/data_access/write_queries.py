@@ -119,12 +119,53 @@ def apply_add_user_to_license(session: Session, license_id: str, user_email: str
 
 # ── CS-L1: revoke_activation ─────────────────────────────────────────────────
 
+def _resolve_activation_via_services(client, user_email: str, product_name: str,
+                                     machine_id: str) -> dict:
+    """Services-backend resolution: a user's activations → match by machine (and
+    product), then resolve the entitlement for the product/license ref. Returns a
+    normalized dict incl. the integer activation_id needed to POST the write."""
+    acts = client.get_user_activations(user_email).get("items", [])
+    on_machine = [a for a in acts if a.get("machineId") == machine_id]
+    if not on_machine:
+        raise ValueError(f"No activation by {user_email} on machine {machine_id}.")
+    chosen = None
+    for a in on_machine:
+        ent = client.get_entitlement(a["entitlementId"])
+        if not product_name or ent["productName"].lower() == product_name.lower():
+            chosen = (a, ent)
+            break
+    if chosen is None:
+        raise ValueError(
+            f"No activation of {product_name} by {user_email} on machine {machine_id}."
+        )
+    a, ent = chosen
+    return {
+        "activation_id": a["id"],
+        "entitlement_id": a["entitlementId"],
+        "user_email": user_email,
+        "product_name": ent["productName"],
+        "machine_id": machine_id,
+        "license_id": ent["licenseRef"],
+        "activation_status": a["status"],
+        "activation_date": a.get("activationDate"),
+        "last_heartbeat": a.get("lastHeartbeat"),
+        "days_since_heartbeat": a.get("daysSinceHeartbeat"),
+    }
+
+
 def find_activation(session: Session, user_email: str, product_name: str,
                     machine_id: str) -> dict:
     """
     Read-only lookup used by the tool layer to build the elicitation
     confirmation BEFORE mutating anything.
     """
+    if getattr(session, "backend", "sqlite") == "services":
+        d = _resolve_activation_via_services(session, user_email, product_name, machine_id)
+        return {k: d[k] for k in (
+            "user_email", "product_name", "machine_id", "license_id",
+            "activation_status", "activation_date", "last_heartbeat", "days_since_heartbeat",
+        )}
+
     user = _user_or_raise(session, user_email)
     product = _product_or_raise(session, product_name)
     act = (
@@ -153,8 +194,40 @@ def find_activation(session: Session, user_email: str, product_name: str,
     }
 
 
+def _revoke_via_services(client, user_email: str, product_name: str, machine_id: str):
+    """Services-backend revoke: resolve the activation, POST the revoke (the service
+    flips status → inactive and returns {before, after}), map to (before, after, result)."""
+    d = _resolve_activation_via_services(client, user_email, product_name, machine_id)
+    change = client.revoke_activation(d["activation_id"], reason="(reason recorded in MCP audit)")
+    before = {
+        "activation_status": change["before"]["status"],
+        "machine_id": machine_id,
+        "license_id": d["license_id"],
+        "days_since_heartbeat": d["days_since_heartbeat"],
+    }
+    after = {
+        "activation_status": change["after"]["status"],
+        "machine_id": machine_id,
+        "license_id": d["license_id"],
+    }
+    result = {
+        "message": (
+            f"Revoked {d['product_name']} activation for {user_email} on {machine_id}. "
+            f"The activation slot is freed — the user can now activate on a new machine."
+        ),
+        "license_id": d["license_id"],
+        "user_email": user_email,
+        "product_name": d["product_name"],
+        "machine_id": machine_id,
+    }
+    return before, after, result
+
+
 def apply_revoke_activation(session: Session, user_email: str, product_name: str,
                              machine_id: str):
+    if getattr(session, "backend", "sqlite") == "services":
+        return _revoke_via_services(session, user_email, product_name, machine_id)
+
     user = _user_or_raise(session, user_email)
     product = _product_or_raise(session, product_name)
     act = (

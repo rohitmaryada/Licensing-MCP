@@ -405,6 +405,9 @@ def query_list_licenses_by_entity(entity_name: str, session: Session) -> dict:
         GET /licensing-service/v1/entities/search?name={entity_name}&include=licenses
         Headers: Authorization: Bearer {service_token}
     """
+    if hasattr(session, "search_entities"):
+        return _list_licenses_by_entity_via_services(session, entity_name)
+
     entities = (
         session.query(Entity)
         .join(EntityType, Entity.entity_type_id == EntityType.id)
@@ -553,6 +556,9 @@ def query_license_administrators(license_id: str, session: Session) -> dict:
         GET /licensing-service/v1/licenses/{license_id}/admins
         Headers: Authorization: Bearer {service_token}
     """
+    if hasattr(session, "get_master_administrators"):
+        return _license_administrators_via_services(session, license_id)
+
     license = (
         session.query(License)
         .join(Entity, License.entity_id == Entity.id)
@@ -590,6 +596,77 @@ def query_license_administrators(license_id: str, session: Session) -> dict:
             for user, added_date in admins
         ],
     }
+
+
+# ── C1 adapters: real services → the flat admin / entity-search shapes ───────
+def _name_from_email(email: str) -> tuple[str, str]:
+    """The admin DTO carries only email; derive a display name from the local part."""
+    local = email.split("@")[0].replace("_", ".")
+    parts = [p for p in local.split(".") if p]
+    first = parts[0].title() if parts else ""
+    last = parts[1].title() if len(parts) > 1 else ""
+    return first, last
+
+
+def _license_administrators_via_services(client, license_ref: str) -> dict:
+    comp = client.get_license_by_ref(license_ref)
+    admins = client.get_master_administrators(comp["master"]["id"])
+    rows = []
+    for a in admins:
+        fn, ln = _name_from_email(a["userEmail"])
+        rows.append({"first_name": fn, "last_name": ln, "email": a["userEmail"],
+                     "admin_since": a.get("addedDate")})
+    rows.sort(key=lambda r: (r["last_name"], r["first_name"]))
+    return {
+        "license_id": comp["licenseRef"],
+        "entity_name": (comp.get("licensee") or {}).get("name"),
+        "license_type": None,
+        "status": comp["status"],
+        "expiry_date": comp["expiryDate"],
+        "administrator_count": len(rows),
+        "administrators": rows,
+    }
+
+
+def _list_licenses_by_entity_via_services(client, entity_name: str) -> dict:
+    resp = client.search_entities(entity_name, size=_ENTITY_CAP)
+    matches = resp.get("items", [])
+    total = resp["pageInfo"]["totalElements"]
+    result_entities = []
+    for ent in matches:
+        by_ent = client.get_entity_licenses(ent["id"])
+        licenses = []
+        for grp in by_ent.get("masterLicenses", []):
+            for lic in grp.get("licenses", []):
+                licenses.append({
+                    "license_id": lic["licenseRef"],
+                    "license_type": None,
+                    "status": lic["status"],
+                    "expiry_date": lic.get("expiryDate"),
+                    "days_until_expiry": lic.get("daysUntilExpiry"),
+                    "product_count": lic.get("productCount"),
+                })
+        result_entities.append({
+            "entity_name": ent["name"],
+            "entity_type": ent.get("entityType"),
+            "industry": ent.get("industry"),
+            "country": ent.get("country"),
+            "license_count": by_ent.get("totalLicenses", len(licenses)),
+            "licenses": licenses,
+        })
+    result = {
+        "query": entity_name,
+        "entity_count": total,
+        "entities_returned": len(result_entities),
+        "truncated": total > len(result_entities),
+        "entities": result_entities,
+    }
+    if result["truncated"]:
+        result["message"] = (
+            f"Matched {total} companies — showing the first {len(result_entities)}. "
+            "Use a more specific name to narrow."
+        )
+    return result
 
 
 # ── Tool 3: search_entitlements ──────────────────────────────────────────────

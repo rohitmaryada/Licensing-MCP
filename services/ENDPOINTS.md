@@ -102,6 +102,11 @@ Owns `entity`, `master_license`, `license`, `license_product`,
 
 ### Reads
 
+#### `GET /licensees?name={q}&page=&size=`
+Fuzzy search licensees/customers by name (`pg_trgm` GIN on `entity.name`), the
+entry point when a rep has only a company name (backs `list_licenses_by_entity`).
+Returns `Page<Licensee>`.
+
 #### `GET /licensees/{entity_id}`
 One customer (licensee).
 
@@ -586,7 +591,7 @@ in it aren't built yet:
 
 | Not built | Contract said | Notes |
 |---|---|---|
-| `GET /entities/search?name=` | backs `search_entitlements` + `list_licenses_by_entity` | **Still needed** — the two entity-name tools are blocked on it. Do it right: `pg_trgm` GIN index for fuzzy/substring search. |
+| ~~`GET /entities/search?name=`~~ | backs `list_licenses_by_entity` | **DONE** as `GET /licensees?name=` (pg_trgm GIN on `entity.name`). `list_licenses_by_entity` repointed. `search_entitlements` (arbitrary multi-criteria) still needs its own search endpoint. |
 | ~~license ref→id resolution~~ | — | **DONE** — `GET /licenses?ref=` addresses licenses by business key (see Licensing reads). Unblocked get_license_status / get_license_products (repointed). Remaining license-keyed writes/admins repoint next. |
 | `GET /entities/{id}/master-licenses` (flat `Page<MasterLicenseSummary>`) | — | As-built takes a different shape: `/licensees/{id}/licenses`, grouped by master license |
 | `GET /licenses/{id}/end-users` | seat membership list | Not exposed as its own endpoint — only a count (`endUserCount`) is embedded in `License` |

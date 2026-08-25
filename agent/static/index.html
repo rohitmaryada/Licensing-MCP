@@ -331,9 +331,9 @@ function renderCapabilities(tools) {
   (tools || []).forEach(t => {
     const first = (t.description || "").trim();
     const m = first.match(/^\[CS-L(\d)[^\]]*\]/);           // [CS-L2+], [CS-L3 only]
+    // server already sends a clean first sentence; just drop the role marker
     let desc = first.replace(/^\[[^\]]*\]\s*/, "").replace(/\s+/g, " ").trim();
-    desc = desc.split(/(?<=[.:])\s/)[0];                    // first sentence
-    if (desc.length > 96) desc = desc.slice(0, 93) + "…";
+    if (desc.length > 130) desc = desc.slice(0, 127) + "…";
     (m ? actions : reads).push({ tier: m ? "CS-L" + m[1] : null, desc });
   });
   const ord = { "CS-L1": 1, "CS-L2": 2, "CS-L3": 3 };

@@ -21,7 +21,10 @@ services:
       POSTGRES_PASSWORD: licensing
       POSTGRES_DB: licensing
     ports:
-      - "127.0.0.1:5433:5432"          # localhost only
+      # Published on all host interfaces so the service containers can reach it
+      # via host.docker.internal:5433 (a 127.0.0.1-only bind blocks them). Local
+      # dev DB with throwaway creds — fine to expose on the loopback-facing host.
+      - "5433:5432"
     volumes:
       - licensing_pgdata:/var/lib/postgresql/data
     healthcheck:

@@ -1,0 +1,22 @@
+# Override: run the services against the hosted Neon DB instead of local docker.
+#
+# The connection string is a SECRET — it is NOT in this file. It comes from the
+# LICENSING_PG_URL environment variable at run time (sourced from the repo-root
+# .env, converted to the SQLAlchemy postgresql+psycopg:// form). Usage:
+#
+#   # from repo root, with NEON_DATABASE_URL set in .env:
+#   line="$(grep -E '^NEON_DATABASE_URL=' .env | head -1)"; v="${line#NEON_DATABASE_URL=}"
+#   export LICENSING_PG_URL="postgresql+psycopg://${v#postgresql://}"
+#   docker compose -f services/docker-compose.yml -f services/docker-compose.neon.yml up -d
+#
+# For a live demo, prefer Neon's POOLED connection string (host has "-pooler").
+services:
+  licensing:
+    environment:
+      LICENSING_PG_URL: "${LICENSING_PG_URL:?set LICENSING_PG_URL to the Neon postgresql+psycopg:// string}"
+  entitlement:
+    environment:
+      LICENSING_PG_URL: "${LICENSING_PG_URL:?set LICENSING_PG_URL to the Neon postgresql+psycopg:// string}"
+  activation:
+    environment:
+      LICENSING_PG_URL: "${LICENSING_PG_URL:?set LICENSING_PG_URL to the Neon postgresql+psycopg:// string}"

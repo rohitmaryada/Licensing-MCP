@@ -11,7 +11,7 @@ from typing import Annotated
 from pydantic import Field
 
 from licensing_mcp.data_access.audit import query_audit_history
-from licensing_mcp.database import get_session
+from licensing_mcp.database import get_cs_session
 from licensing_mcp.identity import IdentityError, resolve_actor
 from licensing_mcp.server_instance import mcp
 
@@ -31,7 +31,8 @@ def get_audit_history(
 
     Requires a CS actor identity — the audit trail is not customer-visible.
     """
-    session = get_session()
+    # Audit + identity live in the SQLite CS store (MCP-side), even in services mode.
+    session = get_cs_session()
     try:
         try:
             actor = resolve_actor(session)

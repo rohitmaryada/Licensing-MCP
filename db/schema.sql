@@ -83,7 +83,10 @@ CREATE TABLE entity (
     external_ref TEXT,                            -- CDS entityId
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_entity_name ON entity (name);     -- bounded name search (upgrade to trigram later)
+CREATE INDEX ix_entity_name ON entity (name);
+-- Fuzzy licensee/company name search (list_licenses_by_entity, search_entitlements).
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX ix_entity_name_trgm ON entity USING gin (name gin_trgm_ops);
 
 -- ── People: end users (declared early — later tables reference it) ───────────
 -- 'app_user' (not 'user' — a Postgres reserved word). MW keys people by

@@ -39,6 +39,24 @@ def get_licensee(session, entity_id: int):
     return session.execute(stmt).mappings().first()
 
 
+def search_entities(session, q: str, page):
+    """Fuzzy search licensees/customers by name (pg_trgm GIN on entity.name),
+    ordered by similarity. Backs list_licenses_by_entity / search_entitlements."""
+    pattern = f"%{q}%"
+    cond = entity.c.name.ilike(pattern)
+    cols = [
+        entity.c.id, entity.c.name, entity.c.entity_type, entity.c.industry,
+        entity.c.country, entity.c.region, entity.c.external_ref, entity.c.created_at,
+    ]
+    stmt = (
+        sa.select(*cols).where(cond)
+        .order_by(sa.func.similarity(entity.c.name, q).desc(), entity.c.id)
+    )
+    total = session.execute(sa.select(sa.func.count()).select_from(entity).where(cond)).scalar_one()
+    rows = session.execute(stmt.limit(page.size).offset(page.page * page.size)).mappings().all()
+    return rows, total
+
+
 def _license_summary_cols():
     return [
         license.c.id,

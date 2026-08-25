@@ -56,3 +56,19 @@ def get_session():
         from licensing_mcp.data_access.service_client import ServiceClient
         return ServiceClient()
     return Session(_engine)
+
+
+def get_cs_session() -> Session:
+    """
+    Return a SQLAlchemy Session bound to the local SQLite store — ALWAYS, even in
+    services mode.
+
+    The CS identity, role, permission and audit tables (cs_*) are MCP-owned and
+    live only in this SQLite store — they are NOT part of the deep services DB.
+    So the write executor uses this session for identity → gate → audit
+    regardless of LICENSING_BACKEND, while the data mutation goes to whatever
+    get_session() returns (SQLite in sqlite mode, the services in services mode).
+    In sqlite mode the executor reuses a single session for both, preserving the
+    original one-transaction atomicity.
+    """
+    return Session(_engine)

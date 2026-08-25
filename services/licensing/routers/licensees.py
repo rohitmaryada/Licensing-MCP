@@ -3,15 +3,29 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from services.licensing.queries import get_licensee, list_licenses_by_entity
+from fastapi import Query
+
+from services.licensing.queries import get_licensee, list_licenses_by_entity, search_entities
 from services.shared.auth import require_service_auth
 from services.shared.db import get_session
 from services.shared.dto import Licensee, LicensesByEntityResponse, MasterLicenseGroup
 from services.shared.errors import NotFoundError
 from services.shared.mappers import row_to_license_summary, row_to_licensee
-from services.shared.schemas import PageParams
+from services.shared.schemas import Page, PageParams, build_page
 
 router = APIRouter(prefix="/licensing/v1/licensees", dependencies=[Depends(require_service_auth)])
+
+
+@router.get("", response_model=Page[Licensee])
+def search_licensees_route(
+    name: str = Query(..., min_length=2, description="company/licensee name substring"),
+    page: PageParams = Depends(),
+    session: Session = Depends(get_session),
+):
+    """Fuzzy search licensees by name — the entry point for a rep who has only a
+    company name (list_licenses_by_entity / search_entitlements)."""
+    rows, total = search_entities(session, name, page)
+    return build_page([row_to_licensee(r) for r in rows], total, page)
 
 
 @router.get("/{entity_id}", response_model=Licensee)

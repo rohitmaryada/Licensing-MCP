@@ -14,6 +14,7 @@ Run:
     uvicorn agent.app:app --port 8100
 """
 
+import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -148,6 +149,19 @@ async def reset_chat(request: Request):
     return {"ok": True}
 
 
+def _tool_summary(description: str, limit: int = 150) -> str:
+    """First complete sentence of a tool's description, whitespace/newlines
+    collapsed — so the UI shows a whole sentence, not a wrapped-line fragment.
+    Splits only at a real sentence boundary (period + space + capital), so
+    abbreviations like 'vs.' don't cut it short; caps very long ones at a word
+    boundary. Keeps any leading role marker ('[CS-L2+] …') for the frontend to tier."""
+    collapsed = " ".join((description or "").split())
+    first = re.split(r"(?<=\.)\s+(?=[A-Z])", collapsed, maxsplit=1)[0]
+    if len(first) > limit:
+        first = first[:limit].rsplit(" ", 1)[0] + "…"
+    return first
+
+
 @app.get("/api/tools")
 async def tools(request: Request):
     """Live tool list — also used by the frontend to check auth state on load."""
@@ -158,7 +172,7 @@ async def tools(request: Request):
     return {
         "actor": authenticated_sessions[session_id]["email"],
         "tools": [
-            {"name": t["name"], "description": t["description"].strip().split("\n")[0]}
+            {"name": t["name"], "description": _tool_summary(t["description"])}
             for t in bridge.claude_tools
         ],
     }

@@ -185,6 +185,21 @@
   .example:hover { border-color: var(--accent); }
   .example .tag { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
 
+  /* ── Capabilities panel ───────────────────────────── */
+  .caps { margin-top: 22px; border-top: 1px solid var(--border, #e3e3e0); padding-top: 14px; }
+  .caps > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); list-style: none; }
+  .caps > summary::-webkit-details-marker { display: none; }
+  .caps > summary::before { content: "▸ "; }
+  .caps[open] > summary::before { content: "▾ "; }
+  .caps-body { margin-top: 12px; }
+  .caps-group { margin-bottom: 14px; }
+  .caps-group h4 { font-size: 12px; font-weight: 640; margin-bottom: 8px; }
+  .caps-item { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 13px; }
+  .caps-item .desc { color: var(--text, #1c1c1a); }
+  .caps-badge { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+    padding: 1px 6px; border-radius: 999px; background: var(--accent, #c85d2e); color: #fff; }
+  .caps-badge.read { background: #6b7280; }
+
   /* ── Composer ────────────────────────────────────── */
   .composer-wrap { background: var(--panel); border-top: 1px solid var(--border); }
   form {
@@ -243,16 +258,24 @@
       <h2>How can I help with licensing today?</h2>
       <p>I can look up licenses, diagnose activation issues, and take role-gated CS actions — every write is audited.</p>
       <div class="examples">
-        <button class="example" data-q="What licenses does Acme Corp have?">
-          <span class="tag">Query</span>What licenses does Acme Corp have?
+        <button class="example" data-q="A customer contact named Jane Doe at Acme Corp emailed for help — find her account and tell me what she's entitled to and whether anything looks wrong.">
+          <span class="tag">Look up a customer</span>Find Jane Doe at Acme Corp — what is she entitled to, and does anything look wrong?
         </button>
-        <button class="example" data-q="jane.doe@acmecorp.com can't activate Simulink on her new laptop. Look into why and resolve it.">
-          <span class="tag">Diagnose &amp; resolve</span>jane.doe@acmecorp.com can't activate Simulink on her new laptop…
+        <button class="example" data-q="jane.doe@acmecorp.com can't activate Simulink on a replacement machine. Diagnose why and free up her seat.">
+          <span class="tag">Diagnose &amp; resolve</span>jane.doe@acmecorp.com can't activate Simulink on a new machine — diagnose and free her seat…
         </button>
-        <button class="example" data-q="Which enterprise licenses expire in the next 60 days?">
-          <span class="tag">Search</span>Which enterprise licenses expire in the next 60 days?
+        <button class="example" data-q="Give me an account overview for Acme Corp: their licenses, seat usage, and anything expiring soon.">
+          <span class="tag">Account review</span>Account overview for Acme Corp — licenses, seat usage, and anything expiring soon.
+        </button>
+        <button class="example" data-q="Is license L-DEMOACME at capacity, what products does it cover, and who administers it?">
+          <span class="tag">License health</span>Is L-DEMOACME at capacity, what products does it cover, and who administers it?
         </button>
       </div>
+
+      <details id="capabilities" class="caps">
+        <summary>What can this assistant do?</summary>
+        <div id="capsBody" class="caps-body"></div>
+      </details>
     </div>
   </div>
 </div>
@@ -292,9 +315,39 @@ fetch("/api/tools").then(r => {
   document.getElementById("userEmail").textContent = d.actor;
   document.getElementById("status").innerHTML =
     `<span class="dot">●</span> ${d.tools.length} tools`;
+  renderCapabilities(d.tools);
 }).catch(() => {
   document.getElementById("loginOverlay").style.display = "flex";
 });
+
+// ── Capabilities panel ───────────────────────────────────────
+// Built entirely from /api/tools (name + first-line description). Write tools'
+// descriptions start with a role marker like "[CS-L2+]" / "[CS-L3 only]"; reads
+// have none — so we can group + tier them without any extra backend.
+function renderCapabilities(tools) {
+  const body = document.getElementById("capsBody");
+  if (!body) return;
+  const reads = [], actions = [];
+  (tools || []).forEach(t => {
+    const first = (t.description || "").trim();
+    const m = first.match(/^\[CS-L(\d)[^\]]*\]/);           // [CS-L2+], [CS-L3 only]
+    // server already sends a clean first sentence; just drop the role marker
+    let desc = first.replace(/^\[[^\]]*\]\s*/, "").replace(/\s+/g, " ").trim();
+    if (desc.length > 130) desc = desc.slice(0, 127) + "…";
+    (m ? actions : reads).push({ tier: m ? "CS-L" + m[1] : null, desc });
+  });
+  const ord = { "CS-L1": 1, "CS-L2": 2, "CS-L3": 3 };
+  actions.sort((a, b) => (ord[a.tier] || 9) - (ord[b.tier] || 9));
+  const group = (title, items, action) => !items.length ? "" :
+    `<div class="caps-group"><h4>${title}</h4>` +
+    items.map(i =>
+      `<div class="caps-item"><span class="caps-badge ${action ? "" : "read"}">${action ? i.tier : "READ"}</span><span class="desc">${i.desc}</span></div>`
+    ).join("") + `</div>`;
+  body.innerHTML = DOMPurify.sanitize(
+    group("🔍 Look things up", reads, false) +
+    group("✏️ Take action — every write is role-gated &amp; audited", actions, true)
+  );
+}
 
 // ── Helpers ──────────────────────────────────────────────────
 function scrollDown() { scroll.scrollTop = scroll.scrollHeight; }

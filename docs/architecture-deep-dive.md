@@ -92,6 +92,36 @@ enterprise microservices and the agent, the tools, and the LLM don't change at a
 
 ---
 
+## Tech stack (for the technical audience)
+
+**The LLM**
+- **Model:** Claude **Opus 4.8** (`claude-opus-4-8`), via the **Anthropic Python SDK** (async).
+- **Adaptive extended thinking** — more reasoning on hard multi-step diagnoses, less on simple lookups.
+- **Prompt caching** on the growing conversation prefix — lower latency and cost across a multi-turn session.
+- The agent loop is **hand-rolled** (`send → tool_use → execute → loop`), *not* LangChain/LlamaIndex — full control, and **model-agnostic**, so a self-hosted open model could drop in behind the same interface.
+
+**The MCP server**
+- Built on the **official MCP Python SDK — `FastMCP`** (`mcp` v1.27), *not* a bespoke protocol.
+- Tools registered with the **`@mcp.tool()` decorator** — Pydantic-typed signatures auto-generate the JSON input schemas the model sees.
+- **Transport: stdio (JSON-RPC)** — the same interface Claude Desktop uses, so our custom agent is *just another MCP client*; any MCP-capable client can drive it.
+
+**The surrounding stack**
+
+| Layer | Tech |
+|---|---|
+| MCP server | Python · **FastMCP (mcp 1.27)** · Pydantic · SQLAlchemy 2.0 (POC) → httpx (prod) |
+| Agent host | **FastAPI** · Anthropic SDK · custom agent loop · MCP stdio client |
+| Auth | **Keycloak** (OIDC) · python-jose (JWT) |
+| Domain services | **FastAPI** · SQLAlchemy Core · psycopg 3 · **Postgres** (Neon / local) · pg_trgm |
+| Orchestration | **Docker Compose** |
+
+**One-liner for the slide / pitch:**
+> Built on the **official MCP SDK (FastMCP)** with **Claude Opus 4.8** — a standard
+> protocol, a swappable model, and a swappable data layer. No lock-in on any single
+> vendor for the model, the transport, or the data.
+
+---
+
 ## Video narration for this scene (~55s, technical)
 
 > Let's look under the hood — because *where the model sits* is the whole story.

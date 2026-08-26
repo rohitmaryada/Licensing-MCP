@@ -25,18 +25,34 @@ to the model's discretion. That's what makes it safe to point at real systems.
 ## The request flow (end to end)
 
 ```
-                    ┌─────────────────── AGENT HOST ───────────────────┐
-                    │                                                    │
-  CS rep            │   ②           ③              ④                    │        ⑥
- (browser)  ──①──►  │  LLM (Claude) ──picks──► MCP client ──MCP/JSON──► │ ──► MCP SERVER ──► Domain service ──► DB
-  "why can't        │  reasons over    a tool    bridge      -RPC over  │      tools →         (Licensing /       (owns
-   Jane activate?"  │  NL + tool defs  + args    (stdio)     the wire   │      cs_executor →    Entitlement /     the
-      ▲             │                                                    │      data_access      Activation)       data)
-      │             │        ▲  the LLM lives HERE                       │        │                  ▲
-      │  Keycloak   │        │  (sees only structured tool RESULTS,      │        │  ⑤ writes pass:  │ Boundary 2:
-      │  OIDC       │        │   never the DB, never credentials)        │        │  gate→mutate→    │ service auth
-      │ (Boundary 1)│        └────────────── ⑦ result flows back up ─────┼────────┘  audit→commit    │ (signed token)
-      └──────⑧ plain-English answer ◄──────────────────────────────────┘
+   CS rep (browser)                    ① authenticated — Keycloak / OIDC (Boundary 1)
+   │   "why can't Jane activate Simulink on her new laptop?"
+   ▼
+   AGENT HOST
+   │   ② sends the conversation + the tool catalog to the model
+   ▼
+   ┌───────────────┐
+   │  LLM (Claude) │    ③ reasons, then picks WHICH tool + arguments.
+   └───────────────┘       It never touches the DB, credentials, or SQL —
+   │   tool_use               it only ever sees the structured tool RESULT (⑦).
+   ▼
+   MCP client bridge         ──  ④ over MCP / JSON-RPC (stdio)  ──►
+   │
+   ▼
+   ┌───────────────┐
+   │  MCP SERVER   │    tools  →  cs_executor  →  data_access
+   └───────────────┘    ⑤ every WRITE: gate → mutate → audit → commit (atomic)
+   │   ⑥ over HTTP — service auth (Boundary 2)
+   ▼
+   Domain services           Licensing  ·  Entitlement  ·  Activation
+   │
+   ▼
+   ┌───────────────┐
+   │   Database    │    owns the data
+   └───────────────┘
+
+   ⑦ the structured result flows back up   →   ⑧ the model turns it into a
+      plain-English answer for the rep.        (multi-step tasks loop ②–⑦)
 ```
 
 1. **Rep authenticates** (Keycloak / OIDC — **Boundary 1**) and asks in plain English.
@@ -101,22 +117,26 @@ enterprise microservices and the agent, the tools, and the LLM don't change at a
 **Title:** *"Where the LLM sits — a bounded reasoning layer"*
 **Theme:** navy background, teal accent, white headings, muted-gray sublabels (match the deck).
 
-**Layout, left → right, five zones with numbered arrows between them:**
+**Layout — a single vertical flow, top → bottom, with the spine of arrows on the
+left and short annotations to the right:**
 
-1. **Rep (browser)** — small user glyph; a teal badge underneath: *"Keycloak / OIDC · Boundary 1"*.
-2. **Agent host** (a container box) holding two stacked pills:
-   - **LLM (Claude)** — *reasons over NL + tool defs; picks a tool* — **highlight this box** (teal border) with a callout line: *"The LLM lives here — it never touches data or credentials; it only sees structured tool results."*
+1. **Rep (browser)** — small user glyph; teal badge: *"Keycloak / OIDC · Boundary 1"*.
+2. **Agent host** (a container band) holding two stacked pills:
+   - **LLM (Claude)** — *reasons over NL + tool defs; picks a tool* — **highlight this
+     box** (teal border) with a callout: *"The LLM lives here — it never touches data
+     or credentials; it only sees structured tool results."*
    - **MCP client bridge** — *speaks MCP (JSON-RPC)*.
-3. **MCP server** (a container box) with three stacked pills, top-to-bottom:
+3. **MCP server** (a container band) with three stacked pills:
    - **Tools** (14) — *the model's entire surface*
    - **cs_executor** — *gate · audit · atomic* — small lock icon
    - **data_access** — *swap seam: SQL ↔ HTTP* — dashed outline to signal "swappable"
-4. **Domain services** — three chips: *Licensing · Entitlement · Activation*; a teal badge: *"service auth · Boundary 2"*.
-5. **Database** — cylinder — *owns the data*.
+4. **Domain services** — three chips: *Licensing · Entitlement · Activation*; teal
+   badge: *"service auth · Boundary 2"*.
+5. **Database** — a cylinder — *owns the data*.
 
-**Arrows (label them 1–8** to match the flow above; keep the return path ⑦→⑧ as a
-lighter arrow going right→left back to the rep). **Two accent callouts:** the LLM
-box, and the `data_access` "swap seam."
+**Arrows:** label them ①–⑧ to match the flow above; keep the return path (⑦→⑧) as a
+lighter arrow going back up to the rep. **Two accent callouts:** the LLM box, and the
+`data_access` "swap seam."
 
 ---
 
